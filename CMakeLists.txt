@@ -17,18 +17,18 @@ message(STATUS "Found Python ${PYTHONLIBS_VERSION_STRING} @ ${PYTHON_INCLUDE_PAT
 
 ### emulator ###
 
-file(GLOB_RECURSE emulatorsources ${CMAKE_SOURCE_DIR}/fcd/*.emulator.cpp)
+file(GLOB_RECURSE emulatorsources ${PROJECT_SOURCE_DIR}/fcd/*.emulator.cpp)
 
-set(INCBIN_TEMPLATE ${CMAKE_SOURCE_DIR}/fcd/cpu/incbin.${CMAKE_SYSTEM_NAME}.tpl)
+set(INCBIN_TEMPLATE ${PROJECT_SOURCE_DIR}/fcd/cpu/incbin.${CMAKE_SYSTEM_NAME}.tpl)
 foreach(emulatorsource ${emulatorsources})
 	string(REGEX REPLACE ".+/([^/]+)\.emulator\.cpp" "\\1" emulator_isa "${emulatorsource}")
-	add_custom_command(OUTPUT "${CMAKE_BINARY_DIR}/${emulator_isa}.emulator.s"
-	                   COMMAND "${CMAKE_CXX_COMPILER}" -c -emit-llvm --std=gnu++14 -O3 "${emulatorsource}" -o "${CMAKE_BINARY_DIR}/${emulator_isa}.emulator.bc"
-	                   COMMAND sed -e "s/{CPU}/${emulator_isa}/" ${INCBIN_TEMPLATE} > "${CMAKE_BINARY_DIR}/${emulator_isa}.emulator.s"
+	add_custom_command(OUTPUT "${PROJECT_BINARY_DIR}/${emulator_isa}.emulator.s"
+	                   COMMAND "${CMAKE_CXX_COMPILER}" -c -emit-llvm --std=gnu++14 -O3 "${emulatorsource}" -o "${PROJECT_BINARY_DIR}/${emulator_isa}.emulator.bc"
+	                   COMMAND sed -e "s/{CPU}/${emulator_isa}/" ${INCBIN_TEMPLATE} > "${PROJECT_BINARY_DIR}/${emulator_isa}.emulator.s"
 	                   DEPENDS "${emulatorsource}"
 	                   IMPLICIT_DEPENDS CXX "${emulatorsource}"
 	                   )
-	set(emuasms ${emuasms} "${CMAKE_BINARY_DIR}/${emulator_isa}.emulator.s")
+	set(emuasms ${emuasms} "${PROJECT_BINARY_DIR}/${emulator_isa}.emulator.s")
 endforeach()
 enable_language(ASM)
 add_library(emu OBJECT ${emuasms})
@@ -38,7 +38,7 @@ set(subdirs fcd/ fcd/ast fcd/callconv fcd/clang fcd/codegen fcd/cpu fcd/executab
 set(pythonbindingsfile "${CMAKE_CURRENT_BINARY_DIR}/bindings.cpp")
 set(subdirs ${subdirs} fcd/python)
 add_custom_command(OUTPUT ${pythonbindingsfile}
-				   COMMAND "${CMAKE_C_COMPILER}" -E ${LLVM_DEFINITIONS} -isystem ${LLVM_INCLUDE_DIRS} "${LLVM_INCLUDE_DIRS}/llvm-c/Core.h" | python "${CMAKE_SOURCE_DIR}/fcd/python/bindings.py" > ${pythonbindingsfile})
+				   COMMAND "${CMAKE_C_COMPILER}" -E ${LLVM_DEFINITIONS} -isystem ${LLVM_INCLUDE_DIRS} "${LLVM_INCLUDE_DIRS}/llvm-c/Core.h" | python "${PROJECT_SOURCE_DIR}/fcd/python/bindings.py" > ${pythonbindingsfile})
 
 ### header search paths file ###
 execute_process(COMMAND "${CMAKE_CXX_COMPILER}" -E -x c++ -v /dev/null OUTPUT_VARIABLE dummy ERROR_VARIABLE defaultHeaderSearchPathList)
