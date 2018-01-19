@@ -19,6 +19,9 @@
 #include "params_registry.h"
 #include "translation_context.h"
 
+#include <glog/logging.h>
+#include <gflags/gflags.h>
+
 #include <llvm/Analysis/AliasAnalysis.h>
 #include <llvm/Analysis/BasicAliasAnalysis.h>
 #include <llvm/Analysis/Passes.h>
@@ -62,6 +65,9 @@ raw_ostream& llvm_errs()
 }
 #endif
 
+DECLARE_string(arch);
+DECLARE_string(os);
+
 namespace
 {
 	cl::opt<string> inputFile(cl::Positional, cl::desc("<input program>"), cl::Required, whitelist());
@@ -83,6 +89,9 @@ namespace
 	cl::alias inputIsModuleAlias("m", cl::desc("Alias for --module-in"), cl::aliasopt(inputIsModule), whitelist());
 	cl::alias outputIsModuleAlias("n", cl::desc("Alias for --module-out"), cl::aliasopt(outputIsModule), whitelist());
 	
+	cl::opt<string> remillArch("arch", cl::Required, cl::desc("Architecture of the code being translated. Valid architectures: x86, amd64 (with or without `_avx` or `_avx512` appended), aarch64, mips32, mips64"), whitelist());
+	cl::opt<string> remillOS("os", cl::Required, cl::desc("Operating system name of the code being translated. Valid OSes: linux, macos, windows."), whitelist());
+
 	template<int (*)()> // templated to ensure multiple instatiation of the static variables
 	inline int optCount(const cl::list<bool>& list)
 	{
@@ -666,10 +675,19 @@ int main(int argc, char** argv)
 {
 	EnablePrettyStackTrace();
 	sys::PrintStackTraceOnErrorSignal(argv[0]);
-	
+	google::InitGoogleLogging(argv[0]);
+
 	pruneOptionList(cl::getRegisteredOptions());
 	cl::ParseCommandLineOptions(argc, argv, "native program decompiler");
-	
+
+	FLAGS_os = remillOS;
+	CHECK(!FLAGS_os.empty())
+    	<< "Must specify an operating system name to --os.";
+
+  	FLAGS_arch = remillArch;
+	CHECK(!FLAGS_arch.empty())
+    	<< "Must specify a machine code architecture name to --arch.";
+
 	if (customPassPipeline != "default" && additionalPasses.size() > 0)
 	{
 		errs() << sys::path::filename(argv[0]) << ": additional passes only accepted when using the default pipeline\n";
