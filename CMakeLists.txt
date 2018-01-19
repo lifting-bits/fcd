@@ -41,7 +41,6 @@ find_package(Clang REQUIRED CONFIG)
 find_package(PythonLibs 2.7 REQUIRED)
 find_package(capstone REQUIRED)
 find_package(gflags REQUIRED)
-find_package(glog REQUIRED)
 
 # hack: manually import the libclang.so library; the libclang target exported by the
 # find_packge script does not work...
@@ -136,4 +135,4 @@ target_link_libraries(fcd PRIVATE ${LLVM_LIBRARIES})
 target_link_libraries(fcd PRIVATE dl -Wl,--gc-sections)
 
 set_source_files_properties(${pythonbindingsfile} PROPERTIES COMPILE_FLAGS -w)
-target_link_libraries(fcd PRIVATE ${PYTHON_LIBRARIES} ${CAPSTONE_LIBRARIES} gflags glog::glog remill)
+target_link_libraries(fcd PRIVATE ${PYTHON_LIBRARIES} ${CAPSTONE_LIBRARIES} gflags remill)

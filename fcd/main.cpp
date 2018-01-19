@@ -19,7 +19,6 @@
 #include "params_registry.h"
 #include "translation_context.h"
 
-#include <glog/logging.h>
 #include <gflags/gflags.h>
 
 #include <llvm/Analysis/AliasAnalysis.h>
@@ -675,18 +674,12 @@ int main(int argc, char** argv)
 {
 	EnablePrettyStackTrace();
 	sys::PrintStackTraceOnErrorSignal(argv[0]);
-	google::InitGoogleLogging(argv[0]);
 
 	pruneOptionList(cl::getRegisteredOptions());
 	cl::ParseCommandLineOptions(argc, argv, "native program decompiler");
 
 	FLAGS_os = remillOS;
-	CHECK(!FLAGS_os.empty())
-    	<< "Must specify an operating system name to --os.";
-
   	FLAGS_arch = remillArch;
-	CHECK(!FLAGS_arch.empty())
-    	<< "Must specify a machine code architecture name to --arch.";
 
 	if (customPassPipeline != "default" && additionalPasses.size() > 0)
 	{
