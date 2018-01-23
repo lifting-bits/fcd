@@ -213,7 +213,7 @@ size_t forEachCall(Function* callee, unsigned stringArgumentIndex,
 bool refillEntryPoints(const TranslationContext& transl,
                        const EntryPointRepository& entryPoints,
                        map<uint64_t, SymbolInfo>& toVisit, size_t iterations) {
-  if (isExclusiveDisassembly() || (isPartialDisassembly() && iterations > 2)) {
+  if (isExclusiveDisassembly() || (isPartialDisassembly() && iterations > 1)) {
     return false;
   }
 
