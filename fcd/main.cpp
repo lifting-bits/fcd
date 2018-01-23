@@ -20,6 +20,7 @@
 #include "translation_context.h"
 
 #include <gflags/gflags.h>
+#include <glog/logging.h>
 
 #include <llvm/Analysis/AliasAnalysis.h>
 #include <llvm/Analysis/BasicAliasAnalysis.h>
@@ -60,105 +61,124 @@ using namespace std;
 [[gnu::used]] raw_ostream& llvm_errs() { return errs(); }
 #endif
 
+DEFINE_bool(partial, false,
+            "Only decompile functions specified with -other-entry");
+DEFINE_bool(exclusive, false, "More restrictive version of -partial");
+DEFINE_bool(module_in, false, "Input file is a LLVM module");
+DEFINE_bool(module_out, false, "Output LLVM module");
+DEFINE_bool(optimize, true, "Optimize ");
+DEFINE_string(other_entry, "", "Add entry points from virtual addresses");
+DEFINE_string(opt, "",
+              "Insert LLVM IR passes; Allows passes from LLVM's opt or .py "
+              "files; Requires default pass pipeline");
+DEFINE_string(pipeline, "default",
+              "Customize opt pass pipeline; \"\" opens $EDITOR;");
+DEFINE_string(headers, "", "Header files to parse for function declarations");
+DEFINE_string(frameworks, "",
+              "Apple framework dirs to be used for declarations");
+DEFINE_string(includes, "", "Directories to search headers in");
+
 DECLARE_string(arch);
 DECLARE_string(os);
 
 namespace {
-cl::opt<string> inputFile(cl::Positional, cl::desc("<input program>"),
-                          cl::Required, whitelist());
-cl::list<unsigned long long> additionalEntryPoints(
-    "other-entry",
-    cl::desc(
-        "Add entry point from virtual address (can be used multiple times)"),
-    cl::CommaSeparated, whitelist());
-cl::list<bool> partialDisassembly(
-    "partial",
-    cl::desc("Only decompile functions specified with --other-entry"),
-    whitelist());
-cl::list<bool> inputIsModule("module-in",
-                             cl::desc("Input file is a LLVM module"),
-                             whitelist());
-cl::list<bool> outputIsModule("module-out", cl::desc("Output LLVM module"),
-                              whitelist());
-
-cl::list<string> additionalPasses(
-    "opt",
-    cl::desc("Insert LLVM optimization pass; a pass name ending in .py is "
-             "interpreted as a Python script. Requires default pass pipeline."),
-    whitelist());
-cl::opt<string> customPassPipeline(
-    "opt-pipeline", cl::desc("Customize pass pipeline. Empty string lets you "
-                             "order passes through $EDITOR; otherwise, must be "
-                             "a whitespace-separated list of passes."),
-    cl::init("default"), whitelist());
-
-cl::list<string> headers(
-    "header", cl::desc("Path of a header file to parse for function "
-                       "declarations. Can be specified multiple times"),
-    whitelist());
-cl::list<string> frameworks(
-    "framework", cl::desc("Path of an Apple framework that fcd should use for "
-                          "declarations. Can be specified multiple times"),
-    whitelist());
-cl::list<string> headerSearchPath(
-    "I", cl::desc("Additional directory to search headers in. Can be specified "
-                  "multiple times"),
-    whitelist());
-
-cl::alias additionalEntryPointsAlias("e", cl::desc("Alias for --other-entry"),
-                                     cl::aliasopt(additionalEntryPoints),
-                                     whitelist());
-cl::alias partialDisassemblyAlias("p", cl::desc("Alias for --partial"),
-                                  cl::aliasopt(partialDisassembly),
-                                  whitelist());
-cl::alias additionalPassesAlias("O", cl::desc("Alias for --opt"),
-                                cl::aliasopt(additionalPasses), whitelist());
-cl::alias inputIsModuleAlias("m", cl::desc("Alias for --module-in"),
-                             cl::aliasopt(inputIsModule), whitelist());
-cl::alias outputIsModuleAlias("n", cl::desc("Alias for --module-out"),
-                              cl::aliasopt(outputIsModule), whitelist());
-
-cl::opt<string> remillArch(
-    "arch", cl::Required,
-    cl::desc("Architecture of the code being translated. Valid architectures: "
-             "x86, amd64 (with or without `_avx` or `_avx512` appended), "
-             "aarch64, mips32, mips64"),
-    whitelist());
-cl::opt<string> remillOS(
-    "os", cl::Required,
-    cl::desc("Operating system name of the code being translated. Valid OSes: "
-             "linux, macos, windows."),
-    whitelist());
-
-template <int (*)()>  // templated to ensure multiple instatiation of the static
-                      // variables
-                      inline int optCount(const cl::list<bool>& list) {
-  static int count = 0;
-  static bool counted = false;
-  if (!counted) {
-    for (bool opt : list) {
-      count += opt ? 1 : -1;
-    }
-    counted = true;
+template <typename T>
+vector<T> parseListFlag(string flag, char sep) {
+  vector<T> res;
+  istringstream f(flag);
+  string s;
+  while (getline(f, s, sep)) {
+    T tmp;
+    istringstream(s) >> tmp;
+    res.push_back(tmp);
   }
-  return count;
+  return res;
 }
 
-inline int partialOptCount() {
-  return optCount<partialOptCount>(partialDisassembly);
-}
+vector<string> headerSearchPath = parseListFlag<string>(FLAGS_includes, ',');
+vector<string> headers = parseListFlag<string>(FLAGS_headers, ',');
+vector<string> frameworks = parseListFlag<string>(FLAGS_frameworks, ',');
+vector<string> customPassPipeline = parseListFlag<string>(FLAGS_pipeline, ',');
+vector<string> additionalPasses = parseListFlag<string>(FLAGS_opt, ',');
+vector<unsigned long long> additionalEntryPoints =
+    parseListFlag<unsigned long long>(FLAGS_other_entry, ',');
 
-inline int moduleInCount() { return optCount<moduleInCount>(inputIsModule); }
+// cl::opt<string> inputFile(cl::Positional, cl::desc("<input program>"),
+//                           cl::Required, whitelist());
+// cl::list<unsigned long long> additionalEntryPoints(
+//     "other-entry",
+//     cl::desc(
+//         "Add entry point from virtual address (can be used multiple times)"),
+//     cl::CommaSeparated, whitelist());
+// cl::list<bool> partialDisassembly(
+//     "partial",
+//     cl::desc("Only decompile functions specified with --other-entry"),
+//     whitelist());
+// cl::list<bool> inputIsModule("module-in",
+//                              cl::desc("Input file is a LLVM module"),
+//                              whitelist());
+// cl::list<bool> outputIsModule("module-out", cl::desc("Output LLVM module"),
+//                               whitelist());
 
-inline int moduleOutCount() { return optCount<moduleOutCount>(outputIsModule); }
+// cl::list<string> additionalPasses(
+//     "opt",
+//     cl::desc("Insert LLVM optimization pass; a pass name ending in .py is "
+//              "interpreted as a Python script. Requires default pass
+//              pipeline."),
+//     whitelist());
+// cl::opt<string> customPassPipeline(
+//     "opt-pipeline", cl::desc("Customize pass pipeline. Empty string lets you
+//     "
+//                              "order passes through $EDITOR; otherwise, must
+//                              be "
+//                              "a whitespace-separated list of passes."),
+//     cl::init("default"), whitelist());
+// cl::list<string> headers(
+//     "header", cl::desc("Path of a header file to parse for function "
+//                        "declarations. Can be specified multiple times"),
+//     whitelist());
+// cl::list<string> frameworks(
+//     "framework", cl::desc("Path of an Apple framework that fcd should use for
+//     "
+//                           "declarations. Can be specified multiple times"),
+//     whitelist());
+// cl::list<string> headerSearchPath(
+//     "I", cl::desc("Additional directory to search headers in. Can be
+//     specified "
+//                   "multiple times"),
+//     whitelist());
 
-void pruneOptionList(StringMap<cl::Option*>& list) {
-  for (auto& pair : list) {
-    if (!whitelist::isWhitelisted(*pair.second)) {
-      pair.second->setHiddenFlag(cl::ReallyHidden);
-    }
-  }
-}
+// template <int (*)()>  // templated to ensure multiple instatiation of the
+// static
+//                       // variables
+//                       inline int optCount(const cl::list<bool>& list) {
+//   static int count = 0;
+//   static bool counted = false;
+//   if (!counted) {
+//     for (bool opt : list) {
+//       count += opt ? 1 : -1;
+//     }
+//     counted = true;
+//   }
+//   return count;
+// }
+
+// inline int partialOptCount() {
+//   return optCount<partialOptCount>(partialDisassembly);
+// }
+
+// inline int moduleInCount() { return optCount<moduleInCount>(inputIsModule); }
+
+// inline int moduleOutCount() { return
+// optCount<moduleOutCount>(outputIsModule); }
+
+// void pruneOptionList(StringMap<cl::Option*>& list) {
+//   for (auto& pair : list) {
+//     if (!whitelist::isWhitelisted(*pair.second)) {
+//       pair.second->setHiddenFlag(cl::ReallyHidden);
+//     }
+//   }
+// }
 
 template <typename T>
 string errorOf(const ErrorOr<T>& error) {
@@ -193,7 +213,7 @@ size_t forEachCall(Function* callee, unsigned stringArgumentIndex,
 bool refillEntryPoints(const TranslationContext& transl,
                        const EntryPointRepository& entryPoints,
                        map<uint64_t, SymbolInfo>& toVisit, size_t iterations) {
-  if (isExclusiveDisassembly() || (isPartialDisassembly() && iterations > 1)) {
+  if (isExclusiveDisassembly() || (isPartialDisassembly() && iterations > 2)) {
     return false;
   }
 
@@ -339,23 +359,23 @@ class Main {
     return createPassesFromList(lines);
   }
 
-  vector<Pass*> readPassPipelineFromString(const string& argString) {
-    stringstream ss(argString, ios::in);
-    vector<string> passes;
-    while (ss) {
-      passes.emplace_back();
-      string& passName = passes.back();
-      ss >> passName;
-      if (passName.size() == 0 || passName[0] == '#') {
-        passes.pop_back();
-      }
-    }
-    auto result = createPassesFromList(passes);
-    if (result.size() == 0) {
-      errs() << getProgramName() << ": empty custom pass list\n";
-    }
-    return result;
-  }
+  // vector<Pass*> readPassPipelineFromString(const string& argString) {
+  //   stringstream ss(argString, ios::in);
+  //   vector<string> passes;
+  //   while (ss) {
+  //     passes.emplace_back();
+  //     string& passName = passes.back();
+  //     ss >> passName;
+  //     if (passName.size() == 0 || passName[0] == '#') {
+  //       passes.pop_back();
+  //     }
+  //   }
+  //   auto result = createPassesFromList(passes);
+  //   if (result.size() == 0) {
+  //     errs() << getProgramName() << ": empty custom pass list\n";
+  //   }
+  //   return result;
+  // }
 
  public:
   Main(int argc, char** argv) : argc(argc), argv(argv), python(argv[0]) {
@@ -565,7 +585,7 @@ class Main {
         "globaldce", "simplifycfg",
     };
 
-    if (customPassPipeline == "default") {
+    if (FLAGS_pipeline == "default") {
       if (additionalPasses.size() > 0) {
         auto extensionPoint =
             find(passNames.begin(), passNames.end(), "simplifyconditions") + 1;
@@ -573,7 +593,7 @@ class Main {
                          additionalPasses.end());
       }
       optimizeAndTransformPasses = createPassesFromList(passNames);
-    } else if (customPassPipeline == "") {
+    } else if (FLAGS_pipeline == "") {
       if (auto editor = getenv("EDITOR")) {
         optimizeAndTransformPasses =
             interactivelyEditPassPipeline(editor, passNames);
@@ -584,19 +604,21 @@ class Main {
         return false;
       }
     } else {
-      optimizeAndTransformPasses =
-          readPassPipelineFromString(customPassPipeline);
+      optimizeAndTransformPasses = createPassesFromList(customPassPipeline);
+      if (optimizeAndTransformPasses.size() == 0) {
+        errs() << getProgramName() << ": empty custom pass list\n";
+      }
     }
     return optimizeAndTransformPasses.size() > 0;
   }
 };
 }
 
-bool isFullDisassembly() { return partialOptCount() < 1; }
+bool isFullDisassembly() { return !FLAGS_partial && !FLAGS_exclusive; }
 
-bool isPartialDisassembly() { return partialOptCount() == 1; }
+bool isPartialDisassembly() { return FLAGS_partial && !FLAGS_exclusive; }
 
-bool isExclusiveDisassembly() { return partialOptCount() > 1; }
+bool isExclusiveDisassembly() { return FLAGS_exclusive; }
 
 bool isEntryPoint(uint64_t vaddr) {
   return any_of(additionalEntryPoints.begin(), additionalEntryPoints.end(),
@@ -604,23 +626,23 @@ bool isEntryPoint(uint64_t vaddr) {
 }
 
 int main(int argc, char** argv) {
-  EnablePrettyStackTrace();
-  sys::PrintStackTraceOnErrorSignal(argv[0]);
+  stringstream ss("");
+  google::InitGoogleLogging(argv[0]);
+  google::SetUsageMessage(ss.str());
+  google::ParseCommandLineFlags(&argc, &argv, true);
 
-  pruneOptionList(cl::getRegisteredOptions());
-  cl::ParseCommandLineOptions(argc, argv, "native program decompiler");
+  CHECK(FLAGS_pipeline == "default" || FLAGS_opt.empty())
+      << "Inserting LLVM IR passes only allowed when using default pipeline.";
 
-  FLAGS_os = remillOS;
-  FLAGS_arch = remillArch;
+  CHECK(!FLAGS_os.empty())
+      << "Must specify an operating system name to --os.";
 
-  if (customPassPipeline != "default" && additionalPasses.size() > 0) {
-    errs() << sys::path::filename(argv[0]) << ": additional passes only "
-                                              "accepted when using the default "
-                                              "pipeline\n";
-    errs() << "Specify custom passes using the " << customPassPipeline.ArgStr
-           << " parameter\n";
-    return 1;
-  }
+  CHECK(!FLAGS_arch.empty())
+      << "Must specify a machine code architecture name to --arch.";
+
+  CHECK(argc > 1) << "Must specify and input file.";
+
+  string inputFile = argv[1];
 
   Main::initializePasses();
 
@@ -639,7 +661,7 @@ int main(int argc, char** argv) {
 
   // step one: create annotated module from executable (or load it from .ll)
   ErrorOr<unique_ptr<MemoryBuffer>> bufferOrError(nullptr);
-  if (moduleInCount()) {
+  if (FLAGS_module_in) {
     PrettyStackTraceFormat parsingIR("Parsing IR from \"%s\"",
                                      inputFile.c_str());
 
@@ -694,24 +716,25 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  // if we want module output, this is where we stop
-  if (moduleOutCount() == 1) {
-    module->print(outs(), nullptr);
-    return 0;
-  }
-
-  if (moduleInCount() < 2) {
+  if (FLAGS_optimize) {
     if (!mainObj.optimizeAndTransformModule(*module, errs(),
                                             executable.get())) {
       return 1;
     }
   }
 
-  if (moduleOutCount() > 1) {
+  if (FLAGS_module_out) {
     module->print(outs(), nullptr);
     return 0;
   }
 
   // step three (final step): emit pseudocode
-  return mainObj.generateEquivalentPseudocode(*module, outs()) ? 0 : 1;
+  if (!mainObj.generateEquivalentPseudocode(*module, outs())) {
+    return 1;
+  }
+
+  google::ShutDownCommandLineFlags();
+  google::ShutdownGoogleLogging();
+
+  return 0;
 }
