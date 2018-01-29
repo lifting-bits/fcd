@@ -92,18 +92,12 @@ std::vector<T> parseListFlag(std::string flag, char sep) {
   return res;
 }
 
-std::vector<std::string> headerSearchPath =
-    parseListFlag<std::string>(FLAGS_includes, ',');
-std::vector<std::string> headers =
-    parseListFlag<std::string>(FLAGS_headers, ',');
-std::vector<std::string> frameworks =
-    parseListFlag<std::string>(FLAGS_frameworks, ',');
-std::vector<std::string> customPassPipeline =
-    parseListFlag<std::string>(FLAGS_pipeline, ',');
-std::vector<std::string> additionalPasses =
-    parseListFlag<std::string>(FLAGS_opt, ',');
-std::vector<unsigned long long> additionalEntryPoints =
-    parseListFlag<unsigned long long>(FLAGS_other_entry, ',');
+auto headerSearchPath = parseListFlag<std::string>(FLAGS_includes, ',');
+auto headers = parseListFlag<std::string>(FLAGS_headers, ',');
+auto frameworks = parseListFlag<std::string>(FLAGS_frameworks, ',');
+auto customPassPipeline = parseListFlag<std::string>(FLAGS_pipeline, ',');
+auto additionalPasses = parseListFlag<std::string>(FLAGS_opt, ',');
+auto additionalEntryPoints = parseListFlag<unsigned long long>(FLAGS_other_entry, ',');
 
 // cl::opt<std::string> inputFile(cl::Positional, cl::desc("<input program>"),
 //                           cl::Required, whitelist());
