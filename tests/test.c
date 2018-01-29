@@ -1,4 +1,4 @@
-// gcc -o large-jump.out large-jump.c
+// gcc -o test.out test.c
 #include <stdio.h>
 
 unsigned a = 0;

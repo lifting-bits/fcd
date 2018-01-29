@@ -1,4 +1,4 @@
-// gcc -o large-jump.out large-jump.c
+// gcc -o funcptr.out funcptr.c
 #include <stdio.h>
 #include <string.h>
 
