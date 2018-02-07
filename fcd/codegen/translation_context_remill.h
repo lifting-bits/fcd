@@ -19,24 +19,26 @@
 
 #include <llvm/IR/Module.h>
 
-#include "remill/BC/Lifter.h"
+#include "remill/Arch/Arch.h"
+
+#include "fcd/executables/executable.h"
 
 namespace fcd {
 
-class TranslationContext {
-private:
-  // remill::InstructionLifter lifter;
-  std::unique_ptr<llvm::Module> module;
-public:
-  TranslationContext(llvm::LLVMContext *context);
-  ~TranslationContext();
+class RemillTranslationContext {
+ private:
+  const remill::Arch *target_arch;
+  llvm::Module *module;
+  Executable *executable;
+
+ public:
+  RemillTranslationContext(llvm::LLVMContext *ctx, Executable *exe);
+  ~RemillTranslationContext(){};
 
   llvm::Function *CreateFunction(uint64_t addr);
-  
-  std::unique_ptr<llvm::Module> GetModule() {
-    return module;
-  }
+
+  llvm::Module *GetModule() { return module; }
 };
 
-} // namespace fcd
-#endif // FCD_CODEGEN_TRANSLATION_CONTEXT_REMILL_H_
+}  // namespace fcd
+#endif  // FCD_CODEGEN_TRANSLATION_CONTEXT_REMILL_H_

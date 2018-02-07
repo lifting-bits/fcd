@@ -17,19 +17,58 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
-#include "remill/Arch/Arch.h"
-#include "remill/BC/Util.h"
+#include <sstream>
+#include <string>
 
-#include <memory>
+#include <llvm/IR/Function.h>
+
+#include "remill/Arch/Instruction.h"
+#include "remill/BC/IntrinsicTable.h"
+#include "remill/BC/Lifter.h"
+#include "remill/BC/Util.h"
 
 #include "fcd/codegen/translation_context_remill.h"
 
 namespace fcd {
 
-TranslationContext::TranslationContext(llvm::LLVMContext *context) {
-  auto target_arch = remill::GetTargetArch();
-  module = remill::LoadTargetSemantics(context);
+RemillTranslationContext::RemillTranslationContext(llvm::LLVMContext *ctx,
+                                                   Executable *exe) {
+  DLOG(INFO) << "Initializing TranslationContext";
+  target_arch = remill::GetTargetArch();
+  module = remill::LoadTargetSemantics(ctx);
   target_arch->PrepareModule(module);
+  executable = exe;
 }
 
-} // namespace fcd
+llvm::Function *RemillTranslationContext::CreateFunction(uint64_t addr) {
+  DLOG(INFO) << "Creating function for code at address " << addr;
+
+  std::stringstream ss;
+  ss << "sub_" << addr;
+
+  auto func = remill::DeclareLiftedFunction(module, ss.str());
+  remill::CloneBlockFunctionInto(func);
+  auto word_type = llvm::Type::getIntNTy(
+      module->getContext(), static_cast<unsigned>(target_arch->address_size));
+
+  auto begin = executable->map(addr);
+  auto bytes = reinterpret_cast<const char *>(begin);
+  std::string inst_bytes(bytes, target_arch->MaxInstructionSize());
+
+  remill::Instruction inst;
+  CHECK(target_arch->DecodeInstruction(addr, inst_bytes, inst))
+      << "Can't decode instruction " << inst.Serialize() << " at " << addr;
+
+  addr += inst.NumBytes();
+
+  remill::IntrinsicTable intrinsics(module);
+  remill::InstructionLifter lifter(word_type, &intrinsics);
+
+  CHECK(remill::kLiftedInstruction == lifter.LiftIntoBlock(inst, &func->back()))
+      << "Can't decode instruction " << inst.Serialize() << " at " << addr;
+
+  func->dump();
+  return func;
+}
+
+}  // namespace fcd

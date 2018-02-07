@@ -54,6 +54,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "fcd/codegen/translation_context_remill.h"
+
 using namespace llvm;
 using namespace std;
 
@@ -397,6 +399,8 @@ class Main {
   ErrorOr<unique_ptr<Module>> generateAnnotatedModule(
       Executable& executable, const string& moduleName = "fcd-out") {
     x86_config config64 = {x86_isa64, 8, X86_REG_RIP, X86_REG_RSP, X86_REG_RBP};
+    fcd::RemillTranslationContext RTC(&llvm, &executable);
+    RTC.CreateFunction(0x40053e);
     TranslationContext transl(llvm, executable, config64, moduleName);
 
     // Load headers here, since this is the earliest point where we have an
@@ -576,13 +580,34 @@ class Main {
   bool prepareOptimizationPasses() {
     // Default passes
     vector<string> passNames = {
-        "globaldce", "fixindirects", "argrec", "sroa", "intnarrowing",
-        "signext", "instcombine", "intops", "simplifyconditions",
+        "globaldce",
+        "fixindirects",
+        "argrec",
+        "sroa",
+        "intnarrowing",
+        "signext",
+        "instcombine",
+        "intops",
+        "simplifyconditions",
         // <-- custom passes go here with the default pass pipeline
-        "instcombine", "gvn", "simplifycfg", "instcombine", "gvn",
-        "recoverstackframe", "dse", "sccp", "simplifycfg", "eliminatecasts",
-        "instcombine", "memssadle", "dse", "instcombine", "sroa", "instcombine",
-        "globaldce", "simplifycfg",
+        "instcombine",
+        "gvn",
+        "simplifycfg",
+        "instcombine",
+        "gvn",
+        "recoverstackframe",
+        "dse",
+        "sccp",
+        "simplifycfg",
+        "eliminatecasts",
+        "instcombine",
+        "memssadle",
+        "dse",
+        "instcombine",
+        "sroa",
+        "instcombine",
+        "globaldce",
+        "simplifycfg",
     };
 
     if (FLAGS_pipeline == "default") {
@@ -598,9 +623,10 @@ class Main {
         optimizeAndTransformPasses =
             interactivelyEditPassPipeline(editor, passNames);
       } else {
-        errs() << getProgramName() << ": environment has no EDITOR variable; "
-                                      "pass pipeline can't be edited "
-                                      "interactively\n";
+        errs() << getProgramName()
+               << ": environment has no EDITOR variable; "
+                  "pass pipeline can't be edited "
+                  "interactively\n";
         return false;
       }
     } else {
@@ -612,7 +638,7 @@ class Main {
     return optimizeAndTransformPasses.size() > 0;
   }
 };
-}
+}  // namespace
 
 bool isFullDisassembly() { return !FLAGS_partial && !FLAGS_exclusive; }
 
@@ -634,8 +660,7 @@ int main(int argc, char** argv) {
   CHECK(FLAGS_pipeline == "default" || FLAGS_opt.empty())
       << "Inserting LLVM IR passes only allowed when using default pipeline.";
 
-  CHECK(!FLAGS_os.empty())
-      << "Must specify an operating system name to --os.";
+  CHECK(!FLAGS_os.empty()) << "Must specify an operating system name to --os.";
 
   CHECK(!FLAGS_arch.empty())
       << "Must specify a machine code architecture name to --arch.";
