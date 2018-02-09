@@ -17,9 +17,16 @@
 #ifndef FCD_CODEGEN_TRANSLATION_CONTEXT_REMILL_H_
 #define FCD_CODEGEN_TRANSLATION_CONTEXT_REMILL_H_
 
+#include <llvm/IR/Function.h>
 #include <llvm/IR/Module.h>
 
+#include <queue>
+#include <unordered_map>
+#include <memory>
+
 #include "remill/Arch/Arch.h"
+#include "remill/BC/IntrinsicTable.h"
+#include "remill/BC/Lifter.h"
 
 #include "fcd/executables/executable.h"
 
@@ -30,13 +37,21 @@ class RemillTranslationContext {
   const remill::Arch *target_arch;
   llvm::Module *module;
   Executable *executable;
+  std::queue<uint64_t> blocks_to_lift;
+  std::unordered_map<uint64_t, llvm::BasicBlock *> blocks;
+  std::unordered_map<uint64_t, llvm::Function *> functions;
+  std::unique_ptr<remill::IntrinsicTable> intrinsics;
+  std::unique_ptr<remill::InstructionLifter> lifter;
+
+  bool LiftBlock(llvm::Function *func, uint64_t addr);
+  bool LiftInst(remill::Instruction &inst, llvm::BasicBlock *block,
+                uint64_t addr);
 
  public:
   RemillTranslationContext(llvm::LLVMContext *ctx, Executable *exe);
   ~RemillTranslationContext(){};
 
   llvm::Function *CreateFunction(uint64_t addr);
-
   llvm::Module *GetModule() { return module; }
 };
 
