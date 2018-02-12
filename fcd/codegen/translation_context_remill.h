@@ -43,6 +43,8 @@ class RemillTranslationContext {
   std::unique_ptr<remill::IntrinsicTable> intrinsics;
   std::unique_ptr<remill::InstructionLifter> lifter;
 
+  llvm::BasicBlock *GetOrCreateBlock(uint64_t addr, llvm::Function *func);
+
   bool LiftBlock(llvm::Function *func, uint64_t addr);
   bool LiftInst(remill::Instruction &inst, llvm::BasicBlock *block,
                 uint64_t addr);

@@ -401,6 +401,7 @@ class Main {
     x86_config config64 = {x86_isa64, 8, X86_REG_RIP, X86_REG_RSP, X86_REG_RBP};
     fcd::RemillTranslationContext RTC(&llvm, &executable);
     RTC.CreateFunction(0x40053e);
+    RTC.GetModule()->dump();
     TranslationContext transl(llvm, executable, config64, moduleName);
 
     // Load headers here, since this is the earliest point where we have an
@@ -471,10 +472,10 @@ class Main {
     legacy::PassManager phaseOne = createBasePassManager();
     phaseOne.add(createExternalAAWrapperPass(&Main::aliasAnalysisHooks));
     phaseOne.add(createDeadCodeEliminationPass());
-    phaseOne.add(createInstructionCombiningPass());
+    phaseOne.add(createInstructionCombiningPass());// <- fails
     phaseOne.add(createRegisterPointerPromotionPass());
     phaseOne.add(createGVNPass());
-    phaseOne.add(createDeadStoreEliminationPass());
+    phaseOne.add(createDeadStoreEliminationPass());// <- fails
     phaseOne.add(createInstructionCombiningPass());
     phaseOne.add(createGlobalDCEPass());
     phaseOne.run(*module);
@@ -653,6 +654,10 @@ bool isEntryPoint(uint64_t vaddr) {
 
 int main(int argc, char** argv) {
   stringstream ss("");
+  
+  EnablePrettyStackTrace();
+  sys::PrintStackTraceOnErrorSignal(argv[0]);
+  
   google::InitGoogleLogging(argv[0]);
   google::SetUsageMessage(ss.str());
   google::ParseCommandLineFlags(&argc, &argv, true);

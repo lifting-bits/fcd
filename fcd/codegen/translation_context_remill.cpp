@@ -19,6 +19,9 @@
 
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Instructions.h>
+#include <llvm/IR/LegacyPassManager.h>
+
+#include <llvm/Transforms/Scalar.h>
 
 #include <sstream>
 #include <string>
@@ -44,14 +47,33 @@ RemillTranslationContext::RemillTranslationContext(llvm::LLVMContext *ctx,
       std::make_unique<remill::InstructionLifter>(word_type, intrinsics.get());
 }
 
+llvm::BasicBlock *RemillTranslationContext::GetOrCreateBlock(
+    uint64_t addr, llvm::Function *func) {
+  auto &block = blocks[addr];
+  if (!block) {
+    std::stringstream ss;
+    ss << "block_" << std::hex << addr;
+    block = llvm::BasicBlock::Create(func->getContext(), ss.str(), func);
+  }
+  return block;
+}
+
 llvm::Function *RemillTranslationContext::CreateFunction(uint64_t addr) {
   DLOG(INFO) << "Creating function for address " << std::hex << addr;
-  auto func = functions[addr];
+  auto &func = functions[addr];
   if (func != nullptr && !func->empty()) {
     LOG(WARNING) << "Asking to re-lift function: " << func->getName().str()
                  << "; returning current function instead";
     return func;
   }
+
+  llvm::legacy::FunctionPassManager func_pass_manager(module);
+  // func_pass_manager.add(llvm::createCFGSimplificationPass());
+  func_pass_manager.add(llvm::createPromoteMemoryToRegisterPass());
+  func_pass_manager.add(llvm::createReassociatePass());
+  func_pass_manager.add(llvm::createDeadStoreEliminationPass());
+  func_pass_manager.add(llvm::createDeadCodeEliminationPass());
+  func_pass_manager.doInitialization();
 
   std::stringstream ss;
   ss << "sub_" << std::hex << addr;
@@ -59,41 +81,41 @@ llvm::Function *RemillTranslationContext::CreateFunction(uint64_t addr) {
   func = remill::DeclareLiftedFunction(module, ss.str());
   remill::CloneBlockFunctionInto(func);
 
+  func->removeFnAttr(llvm::Attribute::AlwaysInline);
+  func->removeFnAttr(llvm::Attribute::InlineHint);
+  func->removeFnAttr(llvm::Attribute::NoReturn);
+  func->addFnAttr(llvm::Attribute::NoInline);
+  func->setVisibility(llvm::GlobalValue::DefaultVisibility);
+
+  llvm::BranchInst::Create(GetOrCreateBlock(addr, func),
+                           &func->getEntryBlock());
+
   blocks_to_lift.push(addr);
   while (!blocks_to_lift.empty()) {
     LiftBlock(func, blocks_to_lift.front());
     blocks_to_lift.pop();
   }
 
-  func->dump();
+  func_pass_manager.run(*func);
+  func_pass_manager.doFinalization();
+  functions[addr] = func;
   return func;
 }
 
 bool RemillTranslationContext::LiftBlock(llvm::Function *func, uint64_t addr) {
   DLOG(INFO) << "Creating basic block for address " << std::hex << addr;
 
-  // Function that will create basic blocks as needed.
-  auto GetOrCreateBlock = [func, this](uint64_t block_addr) {
-    auto &block = this->blocks[block_addr];
-    if (!block) {
-      std::stringstream ss;
-      ss << "block_" << std::hex << block_addr;
-      block = llvm::BasicBlock::Create(func->getContext(), ss.str(), func);
-    }
-    return block;
-  };
-
-  auto block = GetOrCreateBlock(addr);
+  auto block = GetOrCreateBlock(addr, func);
 
   for (remill::Instruction inst; LiftInst(inst, block, addr); inst.Reset()) {
     addr += inst.NumBytes();
+    // TODO: If the jump target is a function, we shouldn't create a branch
     switch (inst.category) {
       case remill::Instruction::kCategoryConditionalBranch: {
-        auto true_target = GetOrCreateBlock(inst.branch_taken_pc);
-        if (true_target->empty())
-          blocks_to_lift.push(inst.branch_taken_pc);
+        auto true_target = GetOrCreateBlock(inst.branch_taken_pc, func);
+        if (true_target->empty()) blocks_to_lift.push(inst.branch_taken_pc);
 
-        auto false_target = GetOrCreateBlock(inst.branch_not_taken_pc);
+        auto false_target = GetOrCreateBlock(inst.branch_not_taken_pc, func);
         if (false_target->empty())
           blocks_to_lift.push(inst.branch_not_taken_pc);
 
@@ -103,7 +125,7 @@ bool RemillTranslationContext::LiftBlock(llvm::Function *func, uint64_t addr) {
         return true;
       }
       case remill::Instruction::kCategoryDirectJump: {
-        auto target = GetOrCreateBlock(inst.branch_taken_pc);
+        auto target = GetOrCreateBlock(inst.branch_taken_pc, func);
         if (target->empty()) blocks_to_lift.push(inst.branch_taken_pc);
 
         llvm::BranchInst::Create(target, block);
@@ -112,6 +134,8 @@ bool RemillTranslationContext::LiftBlock(llvm::Function *func, uint64_t addr) {
       }
       case remill::Instruction::kCategoryIndirectJump:
       case remill::Instruction::kCategoryFunctionReturn:
+        llvm::ReturnInst::Create(module->getContext(),
+                                 remill::LoadMemoryPointer(block), block);
         return true;
       default:
         break;
