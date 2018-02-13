@@ -212,16 +212,18 @@ size_t forEachCall(Function* callee, unsigned stringArgumentIndex,
   return count;
 }
 
-bool refillEntryPoints(const TranslationContext& transl,
+bool refillEntryPoints(const fcd::RemillTranslationContext& transl,
                        const EntryPointRepository& entryPoints,
                        map<uint64_t, SymbolInfo>& toVisit, size_t iterations) {
   if (isExclusiveDisassembly() || (isPartialDisassembly() && iterations > 1)) {
     return false;
   }
 
-  for (uint64_t entryPoint : transl.getDiscoveredEntryPoints()) {
-    if (auto symbolInfo = entryPoints.getInfo(entryPoint)) {
-      toVisit.insert({entryPoint, *symbolInfo});
+  for (auto entryPoint : transl.GetFunctionMap()) {
+    if (entryPoint.second->isDeclaration()) {
+      if (auto symbolInfo = entryPoints.getInfo(entryPoint.first)) {
+        toVisit.insert({entryPoint.first, *symbolInfo});
+      }
     }
   }
   return !toVisit.empty();
@@ -398,16 +400,15 @@ class Main {
 
   ErrorOr<unique_ptr<Module>> generateAnnotatedModule(
       Executable& executable, const string& moduleName = "fcd-out") {
-    x86_config config64 = {x86_isa64, 8, X86_REG_RIP, X86_REG_RSP, X86_REG_RBP};
+    // x86_config config64 = {x86_isa64, 8, X86_REG_RIP, X86_REG_RSP,
+    // X86_REG_RBP};
     fcd::RemillTranslationContext RTC(&llvm, &executable);
-    RTC.CreateFunction(0x40053e);
-    RTC.GetModule()->dump();
-    TranslationContext transl(llvm, executable, config64, moduleName);
+    // TranslationContext transl(llvm, executable, config64, moduleName);
 
     // Load headers here, since this is the earliest point where we have an
     // executable and a module.
     auto cDecls = HeaderDeclarations::create(
-        transl.get(), headerSearchPath.begin(), headerSearchPath.end(),
+        *RTC.GetModule(), headerSearchPath.begin(), headerSearchPath.end(),
         headers.begin(), headers.end(), frameworks.begin(), frameworks.end(),
         errs());
     if (!cDecls) {
@@ -418,7 +419,7 @@ class Main {
     entryPoints.addProvider(executable);
     entryPoints.addProvider(*cDecls);
 
-    md::addIncludedFiles(transl.get(), cDecls->getIncludedFiles());
+    md::addIncludedFiles(*RTC.GetModule(), cDecls->getIncludedFiles());
 
     map<uint64_t, SymbolInfo> toVisit;
     if (isFullDisassembly()) {
@@ -450,11 +451,13 @@ class Main {
         toVisit.erase(iter);
 
         if (functionInfo.name.size() > 0) {
-          transl.setFunctionName(functionInfo.virtualAddress,
-                                 functionInfo.name);
+          // transl.setFunctionName(functionInfo.virtualAddress,
+          //                        functionInfo.name);
+          RTC.DeclareFunction(functionInfo.virtualAddress)
+              ->setName(functionInfo.name);
         }
 
-        if (Function* fn = transl.createFunction(functionInfo.virtualAddress)) {
+        if (Function* fn = RTC.DefineFunction(functionInfo.virtualAddress)) {
           if (Function* cFunction =
                   cDecls->prototypeForAddress(functionInfo.virtualAddress)) {
             md::setFinalPrototype(*fn, *cFunction);
@@ -465,17 +468,17 @@ class Main {
         }
       }
       iterations++;
-    } while (refillEntryPoints(transl, entryPoints, toVisit, iterations));
+    } while (refillEntryPoints(RTC, entryPoints, toVisit, iterations));
 
     // Perform early optimizations to make the module suitable for analysis
-    auto module = transl.take();
+    auto module = std::unique_ptr<llvm::Module>(RTC.GetModule());
     legacy::PassManager phaseOne = createBasePassManager();
     phaseOne.add(createExternalAAWrapperPass(&Main::aliasAnalysisHooks));
     phaseOne.add(createDeadCodeEliminationPass());
-    phaseOne.add(createInstructionCombiningPass());// <- fails
+    phaseOne.add(createInstructionCombiningPass());
     phaseOne.add(createRegisterPointerPromotionPass());
     phaseOne.add(createGVNPass());
-    phaseOne.add(createDeadStoreEliminationPass());// <- fails
+    phaseOne.add(createDeadStoreEliminationPass());
     phaseOne.add(createInstructionCombiningPass());
     phaseOne.add(createGlobalDCEPass());
     phaseOne.run(*module);
@@ -654,10 +657,10 @@ bool isEntryPoint(uint64_t vaddr) {
 
 int main(int argc, char** argv) {
   stringstream ss("");
-  
+
   EnablePrettyStackTrace();
   sys::PrintStackTraceOnErrorSignal(argv[0]);
-  
+
   google::InitGoogleLogging(argv[0]);
   google::SetUsageMessage(ss.str());
   google::ParseCommandLineFlags(&argc, &argv, true);

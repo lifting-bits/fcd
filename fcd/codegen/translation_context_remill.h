@@ -20,9 +20,9 @@
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Module.h>
 
+#include <memory>
 #include <queue>
 #include <unordered_map>
-#include <memory>
 
 #include "remill/Arch/Arch.h"
 #include "remill/BC/IntrinsicTable.h"
@@ -53,8 +53,13 @@ class RemillTranslationContext {
   RemillTranslationContext(llvm::LLVMContext *ctx, Executable *exe);
   ~RemillTranslationContext(){};
 
-  llvm::Function *CreateFunction(uint64_t addr);
-  llvm::Module *GetModule() { return module; }
+  llvm::Function *DeclareFunction(uint64_t addr);
+  llvm::Function *DefineFunction(uint64_t addr);
+
+  llvm::Module *GetModule() const { return module; }
+  const std::unordered_map<uint64_t, llvm::Function *> &GetFunctionMap() const {
+    return functions;
+  }
 };
 
 }  // namespace fcd

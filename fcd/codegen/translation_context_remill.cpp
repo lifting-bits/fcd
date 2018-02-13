@@ -47,6 +47,17 @@ RemillTranslationContext::RemillTranslationContext(llvm::LLVMContext *ctx,
       std::make_unique<remill::InstructionLifter>(word_type, intrinsics.get());
 }
 
+llvm::Function *RemillTranslationContext::DeclareFunction(uint64_t addr) {
+  DLOG(INFO) << "Declaring function for address " << std::hex << addr;
+  auto &func = functions[addr];
+  if (!func) {
+    std::stringstream ss;
+    ss << "sub_" << std::hex << addr;
+    func = remill::DeclareLiftedFunction(module, ss.str());
+  }
+  return func;
+}
+
 llvm::BasicBlock *RemillTranslationContext::GetOrCreateBlock(
     uint64_t addr, llvm::Function *func) {
   auto &block = blocks[addr];
@@ -58,10 +69,10 @@ llvm::BasicBlock *RemillTranslationContext::GetOrCreateBlock(
   return block;
 }
 
-llvm::Function *RemillTranslationContext::CreateFunction(uint64_t addr) {
-  DLOG(INFO) << "Creating function for address " << std::hex << addr;
-  auto &func = functions[addr];
-  if (func != nullptr && !func->empty()) {
+llvm::Function *RemillTranslationContext::DefineFunction(uint64_t addr) {
+  DLOG(INFO) << "Defining function for address " << std::hex << addr;
+  auto func = DeclareFunction(addr);
+  if (!func->empty()) {
     LOG(WARNING) << "Asking to re-lift function: " << func->getName().str()
                  << "; returning current function instead";
     return func;
@@ -75,10 +86,6 @@ llvm::Function *RemillTranslationContext::CreateFunction(uint64_t addr) {
   func_pass_manager.add(llvm::createDeadCodeEliminationPass());
   func_pass_manager.doInitialization();
 
-  std::stringstream ss;
-  ss << "sub_" << std::hex << addr;
-
-  func = remill::DeclareLiftedFunction(module, ss.str());
   remill::CloneBlockFunctionInto(func);
 
   func->removeFnAttr(llvm::Attribute::AlwaysInline);
@@ -160,6 +167,9 @@ bool RemillTranslationContext::LiftInst(remill::Instruction &inst,
   CHECK(remill::kLiftedInstruction == lifter->LiftIntoBlock(inst, block))
       << "Can't lift instruction " << inst.Serialize() << " at " << std::hex
       << addr;
+
+  if (inst.category == remill::Instruction::kCategoryDirectFunctionCall)
+    DeclareFunction(inst.branch_taken_pc);
 
   return true;
 }
