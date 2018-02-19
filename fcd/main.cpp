@@ -17,7 +17,7 @@
 #include "params_registry.h"
 #include "passes.h"
 #include "python_context.h"
-#include "translation_context.h"
+// #include "translation_context.h"
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -47,11 +47,11 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <map>
+#include <list>
+// #include <map>
 #include <memory>
 #include <sstream>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "fcd/codegen/translation_context_remill.h"
@@ -212,22 +212,22 @@ size_t forEachCall(Function* callee, unsigned stringArgumentIndex,
   return count;
 }
 
-bool refillEntryPoints(const fcd::RemillTranslationContext& transl,
-                       const EntryPointRepository& entryPoints,
-                       map<uint64_t, SymbolInfo>& toVisit, size_t iterations) {
-  if (isExclusiveDisassembly() || (isPartialDisassembly() && iterations > 1)) {
-    return false;
-  }
+// bool refillEntryPoints(const fcd::RemillTranslationContext& transl,
+//                        const EntryPointRepository& entryPoints,
+//                        map<uint64_t, SymbolInfo>& toVisit, size_t iterations) {
+//   if (isExclusiveDisassembly() || (isPartialDisassembly() && iterations > 1)) {
+//     return false;
+//   }
 
-  for (auto entryPoint : transl.GetFunctionMap()) {
-    if (entryPoint.second->isDeclaration()) {
-      if (auto symbolInfo = entryPoints.getInfo(entryPoint.first)) {
-        toVisit.insert({entryPoint.first, *symbolInfo});
-      }
-    }
-  }
-  return !toVisit.empty();
-}
+//   for (auto entryPoint : transl.GetFunctionMap()) {
+//     if (entryPoint.second->isDeclaration()) {
+//       if (auto symbolInfo = entryPoints.getInfo(entryPoint.first)) {
+//         toVisit.insert({entryPoint.first, *symbolInfo});
+//       }
+//     }
+//   }
+//   return !toVisit.empty();
+// }
 
 class Main {
   int argc;
@@ -402,124 +402,169 @@ class Main {
       Executable& executable, const string& moduleName = "fcd-out") {
     // x86_config config64 = {x86_isa64, 8, X86_REG_RIP, X86_REG_RSP,
     // X86_REG_RBP};
-    fcd::RemillTranslationContext RTC(&llvm, &executable);
+    fcd::RemillTranslationContext RTC(llvm, executable);
     // TranslationContext transl(llvm, executable, config64, moduleName);
 
     // Load headers here, since this is the earliest point where we have an
     // executable and a module.
     auto cDecls = HeaderDeclarations::create(
-        *RTC.GetModule(), headerSearchPath.begin(), headerSearchPath.end(),
+        RTC.GetModule(), headerSearchPath.begin(), headerSearchPath.end(),
         headers.begin(), headers.end(), frameworks.begin(), frameworks.end(),
         errs());
     if (!cDecls) {
       return make_error_code(FcdError::Main_HeaderParsingError);
     }
 
-    EntryPointRepository entryPoints;
-    entryPoints.addProvider(executable);
-    entryPoints.addProvider(*cDecls);
+    EntryPointRepository EPR;
+    EPR.addProvider(executable);
+    EPR.addProvider(*cDecls);
 
-    md::addIncludedFiles(*RTC.GetModule(), cDecls->getIncludedFiles());
+    md::addIncludedFiles(RTC.GetModule(), cDecls->getIncludedFiles());
 
-    map<uint64_t, SymbolInfo> toVisit;
+    list<uint64_t> entry_points;
     if (isFullDisassembly()) {
-      for (uint64_t address : entryPoints.getVisibleEntryPoints()) {
-        auto symbolInfo = entryPoints.getInfo(address);
-        assert(symbolInfo != nullptr);
-        toVisit.insert({symbolInfo->virtualAddress, *symbolInfo});
+      for (uint64_t addr : EPR.getVisibleEntryPoints()) {
+        CHECK(EPR.getInfo(addr))
+            << "No symbol info for address " << std::hex << addr << std::dec;
+        entry_points.push_back(addr);
       }
     }
 
-    for (uint64_t address : unordered_set<uint64_t>(
-             additionalEntryPoints.begin(), additionalEntryPoints.end())) {
-      if (auto symbolInfo = entryPoints.getInfo(address)) {
-        toVisit.insert({symbolInfo->virtualAddress, *symbolInfo});
+    for (uint64_t addr : additionalEntryPoints) {
+      if (auto symbolInfo = EPR.getInfo(addr)) {
+        entry_points.push_back(addr);
       } else {
         return make_error_code(FcdError::Main_EntryPointOutOfMappedMemory);
       }
     }
 
-    if (toVisit.size() == 0) {
+    if (entry_points.size() == 0) {
       return make_error_code(FcdError::Main_NoEntryPoint);
     }
 
-    size_t iterations = 0;
-    do {
-      while (toVisit.size() > 0) {
-        auto iter = toVisit.begin();
-        auto functionInfo = iter->second;
-        toVisit.erase(iter);
-
-        if (functionInfo.name.size() > 0) {
-          // transl.setFunctionName(functionInfo.virtualAddress,
-          //                        functionInfo.name);
-          RTC.DeclareFunction(functionInfo.virtualAddress)
-              ->setName(functionInfo.name);
-        }
-
-        if (Function* fn = RTC.DefineFunction(functionInfo.virtualAddress)) {
-          if (Function* cFunction =
-                  cDecls->prototypeForAddress(functionInfo.virtualAddress)) {
-            md::setFinalPrototype(*fn, *cFunction);
-          }
-        } else {
-          // Couldn't decompile, abort
-          return make_error_code(FcdError::Main_DecompilationError);
+    unsigned long prev_size = 0;
+    while (entry_points.size() > prev_size) {
+      prev_size = entry_points.size();
+      list<uint64_t> new_entry_points;
+      for (auto addr : entry_points) {
+        for (auto inst : RTC.DecodeFunction(addr)) {
+          if (inst->category ==
+              remill::Instruction::kCategoryDirectFunctionCall)
+            new_entry_points.push_back(inst->branch_taken_pc);
         }
       }
-      iterations++;
-    } while (refillEntryPoints(RTC, entryPoints, toVisit, iterations));
+      entry_points.splice(entry_points.begin(), new_entry_points);
+      entry_points.sort();
+      entry_points.unique();
+    }
 
-    // Perform early optimizations to make the module suitable for analysis
-    auto module = std::unique_ptr<llvm::Module>(RTC.GetModule());
-    legacy::PassManager phaseOne = createBasePassManager();
-    phaseOne.add(createExternalAAWrapperPass(&Main::aliasAnalysisHooks));
-    phaseOne.add(createDeadCodeEliminationPass());
-    phaseOne.add(createInstructionCombiningPass());
-    phaseOne.add(createRegisterPointerPromotionPass());
-    phaseOne.add(createGVNPass());
-    phaseOne.add(createDeadStoreEliminationPass());
-    phaseOne.add(createInstructionCombiningPass());
-    phaseOne.add(createGlobalDCEPass());
-    phaseOne.run(*module);
+    for (auto addr : entry_points) {
+      auto symbol_info = EPR.getInfo(addr);
+      if (auto func = RTC.DeclareFunction(symbol_info->virtualAddress))
+        if (symbol_info->name.size() > 0) func->setName(symbol_info->name);
+    }
 
-    // Annotate stubs before returning module
-    Function* jumpIntrin = module->getFunction("x86_jump_intrin");
-    vector<Function*> functions;
-    for (Function& fn : module->getFunctionList()) {
-      if (md::isPrototype(fn)) {
-        continue;
-      }
-
-      BasicBlock& entry = fn.getEntryBlock();
-      auto terminator = entry.getTerminator();
-      if (isa<UnreachableInst>(terminator)) {
-        if (auto prev = dyn_cast<CallInst>(terminator->getPrevNode()))
-          if (prev->getCalledFunction() == jumpIntrin)
-            if (auto load = dyn_cast<LoadInst>(prev->getOperand(2)))
-              if (auto constantExpr =
-                      dyn_cast<ConstantExpr>(load->getPointerOperand())) {
-                unique_ptr<Instruction> inst(constantExpr->getAsInstruction());
-                if (auto int2ptr = dyn_cast<IntToPtrInst>(inst.get())) {
-                  auto value = cast<ConstantInt>(int2ptr->getOperand(0));
-                  if (const StubInfo* stubTarget =
-                          executable.getStubTarget(value->getLimitedValue())) {
-                    if (Function* cFunction =
-                            cDecls->prototypeForImportName(stubTarget->name)) {
-                      md::setIsStub(fn);
-                      md::setFinalPrototype(fn, *cFunction);
-                    }
-
-                    // If we identified no function from the header file, this
-                    // gives the import its real
-                    // name. Otherwise, it'll prefix the name with some number.
-                    fn.setName(stubTarget->name);
-                  }
-                }
-              }
+    for (auto addr : entry_points) {
+      auto symbol_info = EPR.getInfo(addr);
+      if (auto func = RTC.DefineFunction(symbol_info->virtualAddress)) {
+        if (auto cfunc =
+                cDecls->prototypeForAddress(symbol_info->virtualAddress))
+          md::setFinalPrototype(*func, *cfunc);
+      } else {
+        // Couldn't decompile, abort
+        return make_error_code(FcdError::Main_DecompilationError);
       }
     }
-    return move(module);
+
+    // size_t iterations = 0;
+    // do {
+    //   std::cerr << "SATAN: ";
+    //   for (auto item : toVisit)
+    //     std::cerr << std::hex << item.first << std::dec << " ";
+    //   std::cerr << std::endl;
+
+    //   while (toVisit.size() > 0) {
+    //     auto iter = toVisit.begin();
+    //     auto functionInfo = iter->second;
+    //     toVisit.erase(iter);
+
+    //     if (functionInfo.name.size() > 0) {
+    //       // transl.setFunctionName(functionInfo.virtualAddress,
+    //       //                        functionInfo.name);
+    //       RTC.DeclareFunction(functionInfo.virtualAddress)
+    //           ->setName(functionInfo.name);
+    //     }
+
+    //     if (Function* fn = RTC.DefineFunction(functionInfo.virtualAddress)) {
+    //       if (Function* cFunction =
+    //               cDecls->prototypeForAddress(functionInfo.virtualAddress)) {
+    //         md::setFinalPrototype(*fn, *cFunction);
+    //       }
+    //     } else {
+    //       // Couldn't decompile, abort
+    //       return make_error_code(FcdError::Main_DecompilationError);
+    //     }
+    //   }
+    //   iterations++;
+    // } while (refillEntryPoints(RTC, EPR, toVisit, iterations));
+
+    // Perform early optimizations to make the module suitable for analysis
+    // auto module = RTC.TakeModule();
+    legacy::PassManager phaseOne;
+    phaseOne.add(llvm::createExternalAAWrapperPass(&Main::aliasAnalysisHooks));
+    phaseOne.add(llvm::createDeadCodeEliminationPass());
+    phaseOne.add(llvm::createInstructionCombiningPass());
+    // phaseOne.add(createRegisterPointerPromotionPass());
+    phaseOne.add(llvm::createGVNPass());
+    phaseOne.add(llvm::createDeadStoreEliminationPass());
+    phaseOne.add(llvm::createInstructionCombiningPass());
+    phaseOne.add(llvm::createGlobalDCEPass());
+
+    RTC.FinalizeModule();
+    phaseOne.run(RTC.GetModule());
+    RTC.FinalizeModule();
+
+    // Annotate stubs before returning module
+    // Function* jumpIntrin = module->getFunction("x86_jump_intrin");
+    // vector<Function*> functions;
+    // for (Function& fn : module->getFunctionList()) {
+    //   if (md::isPrototype(fn)) {
+    //     continue;
+    //   }
+
+    //   BasicBlock& entry = fn.getEntryBlock();
+    //   auto terminator = entry.getTerminator();
+    //   if (isa<UnreachableInst>(terminator)) {
+    //     if (auto prev = dyn_cast<CallInst>(terminator->getPrevNode()))
+    //       if (prev->getCalledFunction() == jumpIntrin)
+    //         if (auto load = dyn_cast<LoadInst>(prev->getOperand(2)))
+    //           if (auto constantExpr =
+    //                   dyn_cast<ConstantExpr>(load->getPointerOperand())) {
+    //             unique_ptr<Instruction>
+    //             inst(constantExpr->getAsInstruction()); if (auto int2ptr =
+    //             dyn_cast<IntToPtrInst>(inst.get())) {
+    //               auto value = cast<ConstantInt>(int2ptr->getOperand(0));
+    //               if (const StubInfo* stubTarget =
+    //                       executable.getStubTarget(value->getLimitedValue()))
+    //                       {
+    //                 if (Function* cFunction =
+    //                         cDecls->prototypeForImportName(stubTarget->name))
+    //                         {
+    //                   md::setIsStub(fn);
+    //                   md::setFinalPrototype(fn, *cFunction);
+    //                 }
+
+    //                 // If we identified no function from the header file,
+    //                 this
+    //                 // gives the import its real
+    //                 // name. Otherwise, it'll prefix the name with some
+    //                 number. fn.setName(stubTarget->name);
+    //               }
+    //             }
+    //           }
+    //   }
+    // }
+    return RTC.TakeModule();  // move(RTC.TakeModule());
   }
 
   bool optimizeAndTransformModule(Module& module, raw_ostream& errorOutput,

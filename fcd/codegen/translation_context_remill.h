@@ -22,9 +22,11 @@
 
 #include <memory>
 #include <queue>
+#include <set>
 #include <unordered_map>
 
 #include "remill/Arch/Arch.h"
+#include "remill/Arch/Instruction.h"
 #include "remill/BC/IntrinsicTable.h"
 #include "remill/BC/Lifter.h"
 
@@ -35,31 +37,45 @@ namespace fcd {
 class RemillTranslationContext {
  private:
   const remill::Arch *target_arch;
-  llvm::Module *module;
-  Executable *executable;
+  std::unique_ptr<llvm::Module> module;
+  Executable &executable;
   std::queue<uint64_t> blocks_to_lift;
+  std::unordered_map<uint64_t, remill::Instruction> insts;
   std::unordered_map<uint64_t, llvm::BasicBlock *> blocks;
   std::unordered_map<uint64_t, llvm::Function *> functions;
   std::unique_ptr<remill::IntrinsicTable> intrinsics;
   std::unique_ptr<remill::InstructionLifter> lifter;
 
   llvm::BasicBlock *GetOrCreateBlock(uint64_t addr, llvm::Function *func);
+  remill::Instruction &GetOrDecodeInst(uint64_t addr);
 
-  bool LiftBlock(llvm::Function *func, uint64_t addr);
-  bool LiftInst(remill::Instruction &inst, llvm::BasicBlock *block,
-                uint64_t addr);
+  llvm::BasicBlock *LiftBlock(llvm::Function *func, uint64_t addr);
+  remill::Instruction &LiftInst(llvm::BasicBlock *block, uint64_t addr);
+
+  uint64_t FindFunctionAddr(llvm::Function *func);
 
  public:
-  RemillTranslationContext(llvm::LLVMContext *ctx, Executable *exe);
+  RemillTranslationContext(llvm::LLVMContext &ctx, Executable &exe);
   ~RemillTranslationContext(){};
+
+  std::set<remill::Instruction *> DecodeFunction(uint64_t addr);
+  std::set<remill::Instruction *> DecodeFunction(llvm::Function *func) {
+    return DecodeFunction(FindFunctionAddr(func));
+  }
 
   llvm::Function *DeclareFunction(uint64_t addr);
   llvm::Function *DefineFunction(uint64_t addr);
+  llvm::Function *DefineFunction(llvm::Function *func) {
+    return DefineFunction(FindFunctionAddr(func));
+  }
 
-  llvm::Module *GetModule() const { return module; }
+  llvm::Module &GetModule() const { return *module; }
+  std::unique_ptr<llvm::Module> TakeModule() { return std::move(module); }
   const std::unordered_map<uint64_t, llvm::Function *> &GetFunctionMap() const {
     return functions;
   }
+
+  void FinalizeModule();
 };
 
 }  // namespace fcd
