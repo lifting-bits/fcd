@@ -214,8 +214,10 @@ size_t forEachCall(Function* callee, unsigned stringArgumentIndex,
 
 // bool refillEntryPoints(const fcd::RemillTranslationContext& transl,
 //                        const EntryPointRepository& entryPoints,
-//                        map<uint64_t, SymbolInfo>& toVisit, size_t iterations) {
-//   if (isExclusiveDisassembly() || (isPartialDisassembly() && iterations > 1)) {
+//                        map<uint64_t, SymbolInfo>& toVisit, size_t iterations)
+//                        {
+//   if (isExclusiveDisassembly() || (isPartialDisassembly() && iterations > 1))
+//   {
 //     return false;
 //   }
 
@@ -446,11 +448,11 @@ class Main {
     while (entry_points.size() > prev_size) {
       prev_size = entry_points.size();
       list<uint64_t> new_entry_points;
-      for (auto addr : entry_points) {
-        for (auto inst : RTC.DecodeFunction(addr)) {
-          if (inst->category ==
-              remill::Instruction::kCategoryDirectFunctionCall)
-            new_entry_points.push_back(inst->branch_taken_pc);
+      for (auto ep_addr : entry_points) {
+        for (auto inst_addr : RTC.DecodeFunction(ep_addr)) {
+          auto &inst = RTC.GetInstMap().find(inst_addr)->second;
+          if (inst.category == remill::Instruction::kCategoryDirectFunctionCall)
+            new_entry_points.push_back(inst.branch_taken_pc);
         }
       }
       entry_points.splice(entry_points.begin(), new_entry_points);
@@ -803,6 +805,8 @@ int main(int argc, char** argv) {
 
   if (FLAGS_module_out) {
     module->print(outs(), nullptr);
+    google::ShutDownCommandLineFlags();
+    google::ShutdownGoogleLogging();
     return 0;
   }
 

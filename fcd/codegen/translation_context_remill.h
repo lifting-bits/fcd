@@ -22,7 +22,7 @@
 
 #include <memory>
 #include <queue>
-#include <set>
+#include <unordered_set>
 #include <unordered_map>
 
 #include "remill/Arch/Arch.h"
@@ -58,8 +58,8 @@ class RemillTranslationContext {
   RemillTranslationContext(llvm::LLVMContext &ctx, Executable &exe);
   ~RemillTranslationContext(){};
 
-  std::set<remill::Instruction *> DecodeFunction(uint64_t addr);
-  std::set<remill::Instruction *> DecodeFunction(llvm::Function *func) {
+  std::unordered_set<uint64_t> DecodeFunction(uint64_t addr);
+  std::unordered_set<uint64_t> DecodeFunction(llvm::Function *func) {
     return DecodeFunction(FindFunctionAddr(func));
   }
 
@@ -73,6 +73,10 @@ class RemillTranslationContext {
   std::unique_ptr<llvm::Module> TakeModule() { return std::move(module); }
   const std::unordered_map<uint64_t, llvm::Function *> &GetFunctionMap() const {
     return functions;
+  }
+
+  const std::unordered_map<uint64_t, remill::Instruction> &GetInstMap() const {
+    return insts;
   }
 
   void FinalizeModule();

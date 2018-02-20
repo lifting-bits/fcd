@@ -153,17 +153,19 @@ uint64_t RemillTranslationContext::FindFunctionAddr(llvm::Function *func) {
 remill::Instruction &RemillTranslationContext::GetOrDecodeInst(uint64_t addr) {
   auto &inst = insts[addr];
   if (!inst.IsValid()) {
-    DLOG(INFO) << "Decoding instruction at address " << std::hex << addr;
+    DLOG(INFO) << "Decoding instruction at address " << std::hex << addr
+               << std::dec;
 
     auto begin = executable.map(addr);
-    CHECK(begin != nullptr) << "Could not map address " << std::hex << addr;
+    CHECK(begin != nullptr)
+        << "Could not map address " << std::hex << addr << std::dec;
 
     auto bytes = reinterpret_cast<const char *>(begin);
     std::string inst_bytes(bytes, target_arch->MaxInstructionSize());
 
-    CHECK(target_arch->DecodeInstruction(addr, inst_bytes, inst))
-        << "Can't decode instruction " << inst.Serialize() << " at " << std::hex
-        << addr;
+    if (!target_arch->DecodeInstruction(addr, inst_bytes, inst))
+      LOG(WARNING) << "Can't decode instruction " << inst.Serialize() << " at "
+                   << std::hex << addr << std::dec;
   }
   return inst;
 }
@@ -175,7 +177,7 @@ llvm::BasicBlock *RemillTranslationContext::GetOrCreateBlock(
     DLOG(INFO) << "Creating basic block at address " << std::hex << addr
                << std::dec;
     std::stringstream ss;
-    ss << "block_" << std::hex << addr;
+    ss << "block_" << std::hex << addr << std::dec;
     block = llvm::BasicBlock::Create(func->getContext(), ss.str(), func);
   }
   return block;
@@ -187,25 +189,25 @@ llvm::Function *RemillTranslationContext::DeclareFunction(uint64_t addr) {
     DLOG(INFO) << "Declaring function at address " << std::hex << addr
                << std::dec;
     std::stringstream ss;
-    ss << "sub_" << std::hex << addr;
+    ss << "sub_" << std::hex << addr << std::dec;
     func = remill::DeclareLiftedFunction(module.get(), ss.str());
   }
   return func;
 }
 
-std::set<remill::Instruction *> RemillTranslationContext::DecodeFunction(
+std::unordered_set<uint64_t> RemillTranslationContext::DecodeFunction(
     uint64_t addr) {
   DLOG(INFO) << "Decoding function at address " << std::hex << addr << std::dec;
 
-  std::set<remill::Instruction *> result;
+  std::unordered_set<uint64_t> result;
   std::queue<uint64_t> insts_to_decode;
   insts_to_decode.push(addr);
   while (!insts_to_decode.empty()) {
     addr = insts_to_decode.front();
     insts_to_decode.pop();
     auto &inst = GetOrDecodeInst(addr);
-    if (!result.count(&inst)) {
-      result.insert(&inst);
+    if (!result.count(inst.pc) && inst.IsValid()) {
+      result.insert(inst.pc);
       switch (inst.category) {
         case remill::Instruction::kCategoryConditionalBranch:
           insts_to_decode.push(inst.branch_not_taken_pc);
@@ -235,7 +237,6 @@ llvm::Function *RemillTranslationContext::DefineFunction(uint64_t addr) {
   }
 
   llvm::legacy::FunctionPassManager func_pass_manager(module.get());
-  func_pass_manager.add(llvm::createCFGSimplificationPass());
   func_pass_manager.add(llvm::createPromoteMemoryToRegisterPass());
   func_pass_manager.add(llvm::createReassociatePass());
   func_pass_manager.add(llvm::createDeadStoreEliminationPass());
@@ -374,6 +375,7 @@ remill::Instruction &RemillTranslationContext::LiftInst(llvm::BasicBlock *block,
 void RemillTranslationContext::FinalizeModule() {
   llvm::legacy::PassManager module_pass_manager;
   module_pass_manager.add(llvm::createVerifierPass());
+  module_pass_manager.add(llvm::createCFGSimplificationPass());
   module_pass_manager.add(llvm::createAlwaysInlinerLegacyPass());
   auto isels = FindISELs(module.get());
   RemoveIntrinsics(module.get());
