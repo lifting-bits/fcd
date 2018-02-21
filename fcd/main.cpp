@@ -68,8 +68,8 @@ DEFINE_bool(partial, false,
 DEFINE_bool(exclusive, false, "More restrictive version of -partial");
 DEFINE_bool(module_in, false, "Input file is a LLVM module");
 DEFINE_bool(module_out, false, "Output LLVM module");
-DEFINE_bool(optimize, true, "Optimize ");
-DEFINE_string(other_entry, "", "Add entry points from virtual addresses");
+DEFINE_bool(optimize, true, "Optimize lifted LLVM module");
+DEFINE_string(other_entry, "", "Add entry points from virtual addresses; Requires hexadecimal format");
 DEFINE_string(opt, "",
               "Insert LLVM IR passes; Allows passes from LLVM's opt or .py "
               "files; Requires default pass pipeline");
@@ -91,19 +91,18 @@ vector<T> parseListFlag(string flag, char sep) {
   string s;
   while (getline(f, s, sep)) {
     T tmp;
-    istringstream(s) >> tmp;
+    istringstream(s) >> std::hex >> tmp >> std::dec;
     res.push_back(tmp);
   }
   return res;
 }
 
-vector<string> headerSearchPath = parseListFlag<string>(FLAGS_includes, ',');
-vector<string> headers = parseListFlag<string>(FLAGS_headers, ',');
-vector<string> frameworks = parseListFlag<string>(FLAGS_frameworks, ',');
-vector<string> customPassPipeline = parseListFlag<string>(FLAGS_pipeline, ',');
-vector<string> additionalPasses = parseListFlag<string>(FLAGS_opt, ',');
-vector<unsigned long long> additionalEntryPoints =
-    parseListFlag<unsigned long long>(FLAGS_other_entry, ',');
+vector<string> headerSearchPath;
+vector<string> headers;
+vector<string> frameworks;
+vector<string> customPassPipeline;
+vector<string> additionalPasses;
+vector<uint64_t> additionalEntryPoints;
 
 // cl::opt<string> inputFile(cl::Positional, cl::desc("<input program>"),
 //                           cl::Required, whitelist());
@@ -432,6 +431,11 @@ class Main {
       }
     }
 
+    std::cerr << "additional eps: ";
+    for (auto addr : additionalEntryPoints)
+      std::cerr << std::hex << addr << std::dec << " ";
+    std::cerr << std::endl;
+
     for (uint64_t addr : additionalEntryPoints) {
       if (auto symbolInfo = EPR.getInfo(addr)) {
         entry_points.push_back(addr);
@@ -444,13 +448,24 @@ class Main {
       return make_error_code(FcdError::Main_NoEntryPoint);
     }
 
-    unsigned long prev_size = 0;
-    while (entry_points.size() > prev_size) {
+    auto IterCondition = [](size_t cur_size, size_t prev_size) {
+      // Only decode addresses already in entry_points.
+      // Do not add new ones.
+      if (isExclusiveDisassembly()) return false;
+      // Decode addresses in entry_points and add
+      // entry point addresses discovered in them.
+      if (isPartialDisassembly()) return prev_size == 0;
+      // Decode until there's nothing new to decode.
+      return cur_size > prev_size;
+    };
+
+    size_t prev_size = 0;
+    while (IterCondition(entry_points.size(), prev_size)) {
       prev_size = entry_points.size();
       list<uint64_t> new_entry_points;
       for (auto ep_addr : entry_points) {
         for (auto inst_addr : RTC.DecodeFunction(ep_addr)) {
-          auto &inst = RTC.GetInstMap().find(inst_addr)->second;
+          auto& inst = RTC.GetInstMap().find(inst_addr)->second;
           if (inst.category == remill::Instruction::kCategoryDirectFunctionCall)
             new_entry_points.push_back(inst.branch_taken_pc);
         }
@@ -462,8 +477,11 @@ class Main {
 
     for (auto addr : entry_points) {
       auto symbol_info = EPR.getInfo(addr);
-      if (auto func = RTC.DeclareFunction(symbol_info->virtualAddress))
-        if (symbol_info->name.size() > 0) func->setName(symbol_info->name);
+      if (auto func = RTC.DeclareFunction(symbol_info->virtualAddress)) {
+        if (symbol_info->name.size() > 0) {
+          func->setName(symbol_info->name);
+        }
+      }
     }
 
     for (auto addr : entry_points) {
@@ -480,11 +498,6 @@ class Main {
 
     // size_t iterations = 0;
     // do {
-    //   std::cerr << "SATAN: ";
-    //   for (auto item : toVisit)
-    //     std::cerr << std::hex << item.first << std::dec << " ";
-    //   std::cerr << std::endl;
-
     //   while (toVisit.size() > 0) {
     //     auto iter = toVisit.begin();
     //     auto functionInfo = iter->second;
@@ -711,6 +724,13 @@ int main(int argc, char** argv) {
   google::InitGoogleLogging(argv[0]);
   google::SetUsageMessage(ss.str());
   google::ParseCommandLineFlags(&argc, &argv, true);
+
+  headerSearchPath = parseListFlag<string>(FLAGS_includes, ',');
+  headers = parseListFlag<string>(FLAGS_headers, ',');
+  frameworks = parseListFlag<string>(FLAGS_frameworks, ',');
+  customPassPipeline = parseListFlag<string>(FLAGS_pipeline, ',');
+  additionalPasses = parseListFlag<string>(FLAGS_opt, ',');
+  additionalEntryPoints = parseListFlag<uint64_t>(FLAGS_other_entry, ',');
 
   CHECK(FLAGS_pipeline == "default" || FLAGS_opt.empty())
       << "Inserting LLVM IR passes only allowed when using default pipeline.";

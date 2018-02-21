@@ -205,8 +205,11 @@ std::unordered_set<uint64_t> RemillTranslationContext::DecodeFunction(
   while (!insts_to_decode.empty()) {
     addr = insts_to_decode.front();
     insts_to_decode.pop();
+    if (result.count(addr)) {
+      continue;
+    }
     auto &inst = GetOrDecodeInst(addr);
-    if (!result.count(inst.pc) && inst.IsValid()) {
+    if (inst.IsValid()) {
       result.insert(inst.pc);
       switch (inst.category) {
         case remill::Instruction::kCategoryConditionalBranch:
@@ -375,7 +378,7 @@ remill::Instruction &RemillTranslationContext::LiftInst(llvm::BasicBlock *block,
 void RemillTranslationContext::FinalizeModule() {
   llvm::legacy::PassManager module_pass_manager;
   module_pass_manager.add(llvm::createVerifierPass());
-  module_pass_manager.add(llvm::createCFGSimplificationPass());
+  // module_pass_manager.add(llvm::createCFGSimplificationPass());
   module_pass_manager.add(llvm::createAlwaysInlinerLegacyPass());
   auto isels = FindISELs(module.get());
   RemoveIntrinsics(module.get());
