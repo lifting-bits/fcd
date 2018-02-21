@@ -17,7 +17,6 @@
 #include "params_registry.h"
 #include "passes.h"
 #include "python_context.h"
-// #include "translation_context.h"
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -48,7 +47,6 @@
 #include <iomanip>
 #include <iostream>
 #include <list>
-// #include <map>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -69,7 +67,9 @@ DEFINE_bool(exclusive, false, "More restrictive version of -partial");
 DEFINE_bool(module_in, false, "Input file is a LLVM module");
 DEFINE_bool(module_out, false, "Output LLVM module");
 DEFINE_bool(optimize, true, "Optimize lifted LLVM module");
-DEFINE_string(other_entry, "", "Add entry points from virtual addresses; Requires hexadecimal format");
+DEFINE_string(
+    other_entry, "",
+    "Add entry points from virtual addresses; Requires hexadecimal format");
 DEFINE_string(opt, "",
               "Insert LLVM IR passes; Allows passes from LLVM's opt or .py "
               "files; Requires default pass pipeline");
@@ -104,83 +104,6 @@ vector<string> customPassPipeline;
 vector<string> additionalPasses;
 vector<uint64_t> additionalEntryPoints;
 
-// cl::opt<string> inputFile(cl::Positional, cl::desc("<input program>"),
-//                           cl::Required, whitelist());
-// cl::list<unsigned long long> additionalEntryPoints(
-//     "other-entry",
-//     cl::desc(
-//         "Add entry point from virtual address (can be used multiple times)"),
-//     cl::CommaSeparated, whitelist());
-// cl::list<bool> partialDisassembly(
-//     "partial",
-//     cl::desc("Only decompile functions specified with --other-entry"),
-//     whitelist());
-// cl::list<bool> inputIsModule("module-in",
-//                              cl::desc("Input file is a LLVM module"),
-//                              whitelist());
-// cl::list<bool> outputIsModule("module-out", cl::desc("Output LLVM module"),
-//                               whitelist());
-
-// cl::list<string> additionalPasses(
-//     "opt",
-//     cl::desc("Insert LLVM optimization pass; a pass name ending in .py is "
-//              "interpreted as a Python script. Requires default pass
-//              pipeline."),
-//     whitelist());
-// cl::opt<string> customPassPipeline(
-//     "opt-pipeline", cl::desc("Customize pass pipeline. Empty string lets you
-//     "
-//                              "order passes through $EDITOR; otherwise, must
-//                              be "
-//                              "a whitespace-separated list of passes."),
-//     cl::init("default"), whitelist());
-// cl::list<string> headers(
-//     "header", cl::desc("Path of a header file to parse for function "
-//                        "declarations. Can be specified multiple times"),
-//     whitelist());
-// cl::list<string> frameworks(
-//     "framework", cl::desc("Path of an Apple framework that fcd should use for
-//     "
-//                           "declarations. Can be specified multiple times"),
-//     whitelist());
-// cl::list<string> headerSearchPath(
-//     "I", cl::desc("Additional directory to search headers in. Can be
-//     specified "
-//                   "multiple times"),
-//     whitelist());
-
-// template <int (*)()>  // templated to ensure multiple instatiation of the
-// static
-//                       // variables
-//                       inline int optCount(const cl::list<bool>& list) {
-//   static int count = 0;
-//   static bool counted = false;
-//   if (!counted) {
-//     for (bool opt : list) {
-//       count += opt ? 1 : -1;
-//     }
-//     counted = true;
-//   }
-//   return count;
-// }
-
-// inline int partialOptCount() {
-//   return optCount<partialOptCount>(partialDisassembly);
-// }
-
-// inline int moduleInCount() { return optCount<moduleInCount>(inputIsModule); }
-
-// inline int moduleOutCount() { return
-// optCount<moduleOutCount>(outputIsModule); }
-
-// void pruneOptionList(StringMap<cl::Option*>& list) {
-//   for (auto& pair : list) {
-//     if (!whitelist::isWhitelisted(*pair.second)) {
-//       pair.second->setHiddenFlag(cl::ReallyHidden);
-//     }
-//   }
-// }
-
 template <typename T>
 string errorOf(const ErrorOr<T>& error) {
   return error.getError().message();
@@ -210,25 +133,6 @@ size_t forEachCall(Function* callee, unsigned stringArgumentIndex,
   }
   return count;
 }
-
-// bool refillEntryPoints(const fcd::RemillTranslationContext& transl,
-//                        const EntryPointRepository& entryPoints,
-//                        map<uint64_t, SymbolInfo>& toVisit, size_t iterations)
-//                        {
-//   if (isExclusiveDisassembly() || (isPartialDisassembly() && iterations > 1))
-//   {
-//     return false;
-//   }
-
-//   for (auto entryPoint : transl.GetFunctionMap()) {
-//     if (entryPoint.second->isDeclaration()) {
-//       if (auto symbolInfo = entryPoints.getInfo(entryPoint.first)) {
-//         toVisit.insert({entryPoint.first, *symbolInfo});
-//       }
-//     }
-//   }
-//   return !toVisit.empty();
-// }
 
 class Main {
   int argc;
@@ -364,24 +268,6 @@ class Main {
     return createPassesFromList(lines);
   }
 
-  // vector<Pass*> readPassPipelineFromString(const string& argString) {
-  //   stringstream ss(argString, ios::in);
-  //   vector<string> passes;
-  //   while (ss) {
-  //     passes.emplace_back();
-  //     string& passName = passes.back();
-  //     ss >> passName;
-  //     if (passName.size() == 0 || passName[0] == '#') {
-  //       passes.pop_back();
-  //     }
-  //   }
-  //   auto result = createPassesFromList(passes);
-  //   if (result.size() == 0) {
-  //     errs() << getProgramName() << ": empty custom pass list\n";
-  //   }
-  //   return result;
-  // }
-
  public:
   Main(int argc, char** argv) : argc(argc), argv(argv), python(argv[0]) {
     (void)argc;
@@ -399,30 +285,24 @@ class Main {
     return Executable::parse(start, end);
   }
 
-  ErrorOr<unique_ptr<Module>> generateAnnotatedModule(
-      Executable& executable, const string& moduleName = "fcd-out") {
-    // x86_config config64 = {x86_isa64, 8, X86_REG_RIP, X86_REG_RSP,
-    // X86_REG_RBP};
+  std::unique_ptr<llvm::Module> generateAnnotatedModule(
+      Executable& executable) {
     fcd::RemillTranslationContext RTC(llvm, executable);
-    // TranslationContext transl(llvm, executable, config64, moduleName);
-
     // Load headers here, since this is the earliest point where we have an
     // executable and a module.
-    auto cDecls = HeaderDeclarations::create(
-        RTC.GetModule(), headerSearchPath.begin(), headerSearchPath.end(),
-        headers.begin(), headers.end(), frameworks.begin(), frameworks.end(),
-        errs());
-    if (!cDecls) {
-      return make_error_code(FcdError::Main_HeaderParsingError);
-    }
+    auto &module = RTC.GetModule();
+    auto cdecls = HeaderDeclarations::create(module, headerSearchPath, headers,
+                                             frameworks, errs());
+
+    CHECK(cdecls) << "Header file parsing error";
 
     EntryPointRepository EPR;
     EPR.addProvider(executable);
-    EPR.addProvider(*cDecls);
+    EPR.addProvider(*cdecls);
 
-    md::addIncludedFiles(RTC.GetModule(), cDecls->getIncludedFiles());
+    md::addIncludedFiles(RTC.GetModule(), cdecls->getIncludedFiles());
 
-    list<uint64_t> entry_points;
+    std::list<uint64_t> entry_points;
     if (isFullDisassembly()) {
       for (uint64_t addr : EPR.getVisibleEntryPoints()) {
         CHECK(EPR.getInfo(addr))
@@ -431,22 +311,13 @@ class Main {
       }
     }
 
-    std::cerr << "additional eps: ";
-    for (auto addr : additionalEntryPoints)
-      std::cerr << std::hex << addr << std::dec << " ";
-    std::cerr << std::endl;
-
     for (uint64_t addr : additionalEntryPoints) {
-      if (auto symbolInfo = EPR.getInfo(addr)) {
-        entry_points.push_back(addr);
-      } else {
-        return make_error_code(FcdError::Main_EntryPointOutOfMappedMemory);
-      }
+      CHECK(EPR.getInfo(addr))
+          << "Additional entry address points outside of executable";
+      entry_points.push_back(addr);
     }
 
-    if (entry_points.size() == 0) {
-      return make_error_code(FcdError::Main_NoEntryPoint);
-    }
+    CHECK(!entry_points.empty()) << "No entry points found";
 
     auto IterCondition = [](size_t cur_size, size_t prev_size) {
       // Only decode addresses already in entry_points.
@@ -462,7 +333,7 @@ class Main {
     size_t prev_size = 0;
     while (IterCondition(entry_points.size(), prev_size)) {
       prev_size = entry_points.size();
-      list<uint64_t> new_entry_points;
+      std::list<uint64_t> new_entry_points;
       for (auto ep_addr : entry_points) {
         for (auto inst_addr : RTC.DecodeFunction(ep_addr)) {
           auto& inst = RTC.GetInstMap().find(inst_addr)->second;
@@ -485,46 +356,15 @@ class Main {
     }
 
     for (auto addr : entry_points) {
-      auto symbol_info = EPR.getInfo(addr);
-      if (auto func = RTC.DefineFunction(symbol_info->virtualAddress)) {
-        if (auto cfunc =
-                cDecls->prototypeForAddress(symbol_info->virtualAddress))
-          md::setFinalPrototype(*func, *cfunc);
-      } else {
-        // Couldn't decompile, abort
-        return make_error_code(FcdError::Main_DecompilationError);
-      }
+      auto func_addr = EPR.getInfo(addr)->virtualAddress;
+      auto func = RTC.DefineFunction(func_addr);
+      CHECK(func) << "Could not lift function at address " << std::hex
+                  << func_addr << std::dec;
+      if (auto cfunc = cdecls->prototypeForAddress(func_addr))
+        md::setFinalPrototype(*func, *cfunc);
     }
 
-    // size_t iterations = 0;
-    // do {
-    //   while (toVisit.size() > 0) {
-    //     auto iter = toVisit.begin();
-    //     auto functionInfo = iter->second;
-    //     toVisit.erase(iter);
-
-    //     if (functionInfo.name.size() > 0) {
-    //       // transl.setFunctionName(functionInfo.virtualAddress,
-    //       //                        functionInfo.name);
-    //       RTC.DeclareFunction(functionInfo.virtualAddress)
-    //           ->setName(functionInfo.name);
-    //     }
-
-    //     if (Function* fn = RTC.DefineFunction(functionInfo.virtualAddress)) {
-    //       if (Function* cFunction =
-    //               cDecls->prototypeForAddress(functionInfo.virtualAddress)) {
-    //         md::setFinalPrototype(*fn, *cFunction);
-    //       }
-    //     } else {
-    //       // Couldn't decompile, abort
-    //       return make_error_code(FcdError::Main_DecompilationError);
-    //     }
-    //   }
-    //   iterations++;
-    // } while (refillEntryPoints(RTC, EPR, toVisit, iterations));
-
     // Perform early optimizations to make the module suitable for analysis
-    // auto module = RTC.TakeModule();
     legacy::PassManager phaseOne;
     phaseOne.add(llvm::createExternalAAWrapperPass(&Main::aliasAnalysisHooks));
     phaseOne.add(llvm::createDeadCodeEliminationPass());
@@ -539,47 +379,7 @@ class Main {
     phaseOne.run(RTC.GetModule());
     RTC.FinalizeModule();
 
-    // Annotate stubs before returning module
-    // Function* jumpIntrin = module->getFunction("x86_jump_intrin");
-    // vector<Function*> functions;
-    // for (Function& fn : module->getFunctionList()) {
-    //   if (md::isPrototype(fn)) {
-    //     continue;
-    //   }
-
-    //   BasicBlock& entry = fn.getEntryBlock();
-    //   auto terminator = entry.getTerminator();
-    //   if (isa<UnreachableInst>(terminator)) {
-    //     if (auto prev = dyn_cast<CallInst>(terminator->getPrevNode()))
-    //       if (prev->getCalledFunction() == jumpIntrin)
-    //         if (auto load = dyn_cast<LoadInst>(prev->getOperand(2)))
-    //           if (auto constantExpr =
-    //                   dyn_cast<ConstantExpr>(load->getPointerOperand())) {
-    //             unique_ptr<Instruction>
-    //             inst(constantExpr->getAsInstruction()); if (auto int2ptr =
-    //             dyn_cast<IntToPtrInst>(inst.get())) {
-    //               auto value = cast<ConstantInt>(int2ptr->getOperand(0));
-    //               if (const StubInfo* stubTarget =
-    //                       executable.getStubTarget(value->getLimitedValue()))
-    //                       {
-    //                 if (Function* cFunction =
-    //                         cDecls->prototypeForImportName(stubTarget->name))
-    //                         {
-    //                   md::setIsStub(fn);
-    //                   md::setFinalPrototype(fn, *cFunction);
-    //                 }
-
-    //                 // If we identified no function from the header file,
-    //                 this
-    //                 // gives the import its real
-    //                 // name. Otherwise, it'll prefix the name with some
-    //                 number. fn.setName(stubTarget->name);
-    //               }
-    //             }
-    //           }
-    //   }
-    // }
-    return RTC.TakeModule();  // move(RTC.TakeModule());
+    return RTC.TakeModule();
   }
 
   bool optimizeAndTransformModule(Module& module, raw_ostream& errorOutput,
@@ -790,16 +590,7 @@ int main(int argc, char** argv) {
     }
 
     executable = move(executableOrError.get());
-    string moduleName = sys::path::stem(inputFile);
-    auto moduleOrError =
-        mainObj.generateAnnotatedModule(*executable, moduleName);
-    if (!moduleOrError) {
-      cerr << program << ": couldn't build LLVM module out of " << inputFile
-           << ": " << errorOf(moduleOrError) << endl;
-      return 1;
-    }
-
-    module = move(moduleOrError.get());
+    module = mainObj.generateAnnotatedModule(*executable);
   }
 
   // Make sure that the module is legal
