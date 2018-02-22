@@ -22,9 +22,12 @@
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/IR/Verifier.h>
 
+#include <llvm/Transforms/IPO.h>
 #include <llvm/Transforms/IPO/AlwaysInliner.h>
 #include <llvm/Transforms/Scalar.h>
+#include <llvm/Transforms/Scalar/GVN.h>
 
+#include <iostream>
 #include <sstream>
 #include <string>
 
@@ -112,6 +115,117 @@ static void RemoveIntrinsics(llvm::Module *module) {
   RemoveFunctionByName("__remill_basic_block");
   RemoveFunctionByName("__remill_defer_inlining");
   RemoveFunctionByName("__remill_intrinsics");
+}
+
+// Lower a memory read intrinsic into a `load` instruction.
+static void ReplaceMemReadOp(llvm::Module *module, const char *name,
+                             llvm::Type *val_type, unsigned addr_space) {
+  auto func = module->getFunction(name);
+  if (!func) {
+    return;
+  }
+
+  CHECK(func->isDeclaration())
+      << "Cannot lower already implemented memory intrinsic " << name;
+
+  auto callers = remill::CallersOf(func);
+  for (auto call_inst : callers) {
+    auto addr = call_inst->getArgOperand(1);
+
+    llvm::IRBuilder<> ir(call_inst);
+    llvm::Value *ptr = nullptr;
+    if (auto as_int = llvm::dyn_cast<llvm::PtrToIntInst>(addr)) {
+      ptr = ir.CreateBitCast(
+          as_int->getPointerOperand(),
+          llvm::PointerType::get(val_type, as_int->getPointerAddressSpace()));
+
+    } else {
+      ptr =
+          ir.CreateIntToPtr(addr, llvm::PointerType::get(val_type, addr_space));
+    }
+
+    llvm::Value *val = ir.CreateLoad(ptr);
+    if (val_type->isX86_FP80Ty()) {
+      val = ir.CreateFPTrunc(val, func->getReturnType());
+    }
+    call_inst->replaceAllUsesWith(val);
+  }
+  for (auto call_inst : callers) {
+    call_inst->eraseFromParent();
+  }
+  RemoveFunction(func);
+}
+
+// Lower a memory write intrinsic into a `store` instruction.
+static void ReplaceMemWriteOp(llvm::Module *module, const char *name,
+                              llvm::Type *val_type, unsigned addr_space) {
+  auto func = module->getFunction(name);
+  if (!func) {
+    return;
+  }
+
+  CHECK(func->isDeclaration())
+      << "Cannot lower already implemented memory intrinsic " << name;
+
+  auto callers = remill::CallersOf(func);
+
+  for (auto call_inst : callers) {
+    auto mem_ptr = call_inst->getArgOperand(0);
+    auto addr = call_inst->getArgOperand(1);
+    auto val = call_inst->getArgOperand(2);
+
+    llvm::IRBuilder<> ir(call_inst);
+
+    llvm::Value *ptr = nullptr;
+    if (auto as_int = llvm::dyn_cast<llvm::PtrToIntInst>(addr)) {
+      ptr = ir.CreateBitCast(
+          as_int->getPointerOperand(),
+          llvm::PointerType::get(val_type, as_int->getPointerAddressSpace()));
+    } else {
+      ptr =
+          ir.CreateIntToPtr(addr, llvm::PointerType::get(val_type, addr_space));
+    }
+
+    if (val_type->isX86_FP80Ty()) {
+      val = ir.CreateFPExt(val, val_type);
+    }
+
+    ir.CreateStore(val, ptr);
+    call_inst->replaceAllUsesWith(mem_ptr);
+  }
+  for (auto call_inst : callers) {
+    call_inst->eraseFromParent();
+  }
+  RemoveFunction(func);
+}
+
+static void LowerMemOps(llvm::Module *module, unsigned addr_space) {
+  auto &ctx = module->getContext();
+
+  auto ReadOpWrapper = [&](const char *name, llvm::Type *type) {
+    ReplaceMemReadOp(module, name, type, addr_space);
+  };
+
+  auto WriteOpWrapper = [&](const char *name, llvm::Type *type) {
+    ReplaceMemWriteOp(module, name, type, addr_space);
+  };
+
+  ReadOpWrapper("__remill_read_memory_8", llvm::Type::getInt8Ty(ctx));
+  ReadOpWrapper("__remill_read_memory_16", llvm::Type::getInt16Ty(ctx));
+  ReadOpWrapper("__remill_read_memory_32", llvm::Type::getInt32Ty(ctx));
+  ReadOpWrapper("__remill_read_memory_64", llvm::Type::getInt64Ty(ctx));
+  ReadOpWrapper("__remill_read_memory_f32", llvm::Type::getFloatTy(ctx));
+  ReadOpWrapper("__remill_read_memory_f64", llvm::Type::getDoubleTy(ctx));
+
+  WriteOpWrapper("__remill_write_memory_8", llvm::Type::getInt8Ty(ctx));
+  WriteOpWrapper("__remill_write_memory_16", llvm::Type::getInt16Ty(ctx));
+  WriteOpWrapper("__remill_write_memory_32", llvm::Type::getInt32Ty(ctx));
+  WriteOpWrapper("__remill_write_memory_64", llvm::Type::getInt64Ty(ctx));
+  WriteOpWrapper("__remill_write_memory_f32", llvm::Type::getFloatTy(ctx));
+  WriteOpWrapper("__remill_write_memory_f64", llvm::Type::getDoubleTy(ctx));
+
+  ReadOpWrapper("__remill_read_memory_f80", llvm::Type::getX86_FP80Ty(ctx));
+  WriteOpWrapper("__remill_write_memory_f80", llvm::Type::getX86_FP80Ty(ctx));
 }
 
 static bool IsTerminator(remill::Instruction &inst) {
@@ -263,6 +377,10 @@ llvm::Function *RemillTranslationContext::DefineFunction(uint64_t addr) {
     blocks_to_lift.pop();
   }
 
+  auto pc_arg = remill::NthArgument(func, 1);
+  auto pc_val = llvm::ConstantInt::get(pc_arg->getType(), addr);
+  pc_arg->replaceAllUsesWith(pc_val);
+
   func_pass_manager.run(*func);
   func_pass_manager.doFinalization();
   return func;
@@ -375,16 +493,83 @@ remill::Instruction &RemillTranslationContext::LiftInst(llvm::BasicBlock *block,
   return inst;
 }
 
+const StubInfo *RemillTranslationContext::GetStubInfo(
+    llvm::Function *func) const {
+
+  if (func->isDeclaration()) {
+    return nullptr;
+  }
+  
+  llvm::Value *read = nullptr;
+  
+  auto term = func->getEntryBlock().getTerminator();
+  if (llvm::isa<llvm::ReturnInst>(term)) {
+    if (auto jump = llvm::dyn_cast<llvm::CallInst>(term->getPrevNode())) {
+      if (jump->getCalledFunction() == intrinsics->jump) {
+        read = jump->getArgOperand(1);
+      }
+    }
+  }
+
+  if (!read) {
+    return nullptr;
+  }
+  
+  llvm::ConstantInt *addr = nullptr;
+  if (auto call = llvm::dyn_cast<llvm::CallInst>(read)) {
+    if (call->getCalledFunction() == intrinsics->read_memory_64) {
+      addr = llvm::dyn_cast<llvm::ConstantInt>(call->getArgOperand(1));
+    }
+  }
+
+  if (auto load = llvm::dyn_cast<llvm::LoadInst>(read)) {
+    if (load->getPointerAddressSpace() == pmem_addr_space) {
+      auto read_op = load->getPointerOperand();
+      if (auto const_expr = llvm::dyn_cast<llvm::ConstantExpr>(read_op)) {
+        auto inst = const_expr->getAsInstruction();
+        if (auto int2ptr = llvm::dyn_cast<llvm::IntToPtrInst>(inst)) {
+          addr = llvm::dyn_cast<llvm::ConstantInt>(int2ptr->getOperand(0));
+        }
+      } else {
+        addr = llvm::dyn_cast<llvm::ConstantInt>(read_op);
+      }
+    }
+  }
+
+  return addr ? executable.getStubTarget(addr->getLimitedValue()) : nullptr;
+}
+
 void RemillTranslationContext::FinalizeModule() {
   llvm::legacy::PassManager module_pass_manager;
-  module_pass_manager.add(llvm::createVerifierPass());
+  // module_pass_manager.add(llvm::createVerifierPass());
   // module_pass_manager.add(llvm::createCFGSimplificationPass());
   module_pass_manager.add(llvm::createAlwaysInlinerLegacyPass());
+  // module_pass_manager.add(llvm::createExternalAAWrapperPass(&Main::aliasAnalysisHooks));
+  module_pass_manager.add(llvm::createDeadCodeEliminationPass());
+  module_pass_manager.add(llvm::createInstructionCombiningPass());
+  module_pass_manager.add(llvm::createGVNPass());
+  module_pass_manager.add(llvm::createDeadStoreEliminationPass());
+  module_pass_manager.add(llvm::createInstructionCombiningPass());
+  module_pass_manager.add(llvm::createGlobalDCEPass());
+
   auto isels = FindISELs(module.get());
   RemoveIntrinsics(module.get());
   PrivatizeISELs(isels);
   module_pass_manager.run(*module);
+  
   RemoveIntrinsics(module.get());
+  
+  // Lower memory intrinsics into loads and stores
+  // Runtime memory address space is 0
+  // Program memory address space is given by pmem_addr_space
+  LowerMemOps(module.get(), pmem_addr_space);
+  
+  // Attempt to annotate remaining functions as stubs
+  for (auto& func : *module) {
+    if (auto stub_info = GetStubInfo(&func)) {
+      func.setName(stub_info->name);
+    }
+  }
 }
 
 }  // namespace fcd

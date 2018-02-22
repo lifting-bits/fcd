@@ -36,6 +36,7 @@ namespace fcd {
 
 class RemillTranslationContext {
  private:
+  const unsigned pmem_addr_space = 1;
   const remill::Arch *target_arch;
   std::unique_ptr<llvm::Module> module;
   Executable &executable;
@@ -78,8 +79,11 @@ class RemillTranslationContext {
   const std::unordered_map<uint64_t, remill::Instruction> &GetInstMap() const {
     return insts;
   }
+  
+  const StubInfo *GetStubInfo(llvm::Function *func) const;
 
   void FinalizeModule();
+
 };
 
 }  // namespace fcd

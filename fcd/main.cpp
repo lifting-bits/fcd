@@ -290,7 +290,7 @@ class Main {
     fcd::RemillTranslationContext RTC(llvm, executable);
     // Load headers here, since this is the earliest point where we have an
     // executable and a module.
-    auto &module = RTC.GetModule();
+    auto& module = RTC.GetModule();
     auto cdecls = HeaderDeclarations::create(module, headerSearchPath, headers,
                                              frameworks, errs());
 
@@ -360,24 +360,36 @@ class Main {
       auto func = RTC.DefineFunction(func_addr);
       CHECK(func) << "Could not lift function at address " << std::hex
                   << func_addr << std::dec;
-      if (auto cfunc = cdecls->prototypeForAddress(func_addr))
+      if (auto cfunc = cdecls->prototypeForAddress(func_addr)) {
         md::setFinalPrototype(*func, *cfunc);
+      }
     }
 
     // Perform early optimizations to make the module suitable for analysis
-    legacy::PassManager phaseOne;
-    phaseOne.add(llvm::createExternalAAWrapperPass(&Main::aliasAnalysisHooks));
-    phaseOne.add(llvm::createDeadCodeEliminationPass());
-    phaseOne.add(llvm::createInstructionCombiningPass());
+    // legacy::PassManager phaseOne;
+    // phaseOne.add(llvm::createExternalAAWrapperPass(&Main::aliasAnalysisHooks));
+    // phaseOne.add(llvm::createDeadCodeEliminationPass());
+    // phaseOne.add(llvm::createInstructionCombiningPass());
     // phaseOne.add(createRegisterPointerPromotionPass());
-    phaseOne.add(llvm::createGVNPass());
-    phaseOne.add(llvm::createDeadStoreEliminationPass());
-    phaseOne.add(llvm::createInstructionCombiningPass());
-    phaseOne.add(llvm::createGlobalDCEPass());
+    // phaseOne.add(llvm::createGVNPass());
+    // phaseOne.add(llvm::createDeadStoreEliminationPass());
+    // phaseOne.add(llvm::createInstructionCombiningPass());
+    // phaseOne.add(llvm::createGlobalDCEPass());
 
     RTC.FinalizeModule();
-    phaseOne.run(RTC.GetModule());
-    RTC.FinalizeModule();
+    // phaseOne.run(RTC.GetModule());
+    // RTC.FinalizeModule();
+
+    for (auto& func : RTC.GetModule()) {
+      if (!md::isPrototype(func)) {
+        if (auto cfunc = cdecls->prototypeForImportName(func.getName())) {
+          if (&func != cfunc) {
+            md::setIsStub(func);
+            md::setFinalPrototype(func, *cfunc);
+          }
+        }
+      }
+    }
 
     return RTC.TakeModule();
   }
