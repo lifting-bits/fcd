@@ -27,7 +27,6 @@
 #include <llvm/Transforms/Scalar.h>
 #include <llvm/Transforms/Scalar/GVN.h>
 
-#include <iostream>
 #include <sstream>
 #include <string>
 

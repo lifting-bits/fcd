@@ -144,21 +144,12 @@ class Main {
 
   static void aliasAnalysisHooks(Pass& pass, Function& fn, AAResults& aar) {
     if (auto prgmem =
-            pass.getAnalysisIfAvailable<ProgramMemoryAAWrapperPass>()) {
+            pass.getAnalysisIfAvailable<fcd::AddressSpaceAAWrapperPass>()) {
       aar.addAAResult(prgmem->getResult());
     }
     if (auto params = pass.getAnalysisIfAvailable<ParameterRegistry>()) {
       aar.addAAResult(params->getAAResult());
     }
-  }
-
-  static legacy::PassManager createBasePassManager() {
-    legacy::PassManager pm;
-    pm.add(createTypeBasedAAWrapperPass());
-    pm.add(createScopedNoAliasAAWrapperPass());
-    pm.add(createBasicAAWrapperPass());
-    pm.add(createProgramMemoryAliasAnalysis());
-    return pm;
   }
 
   vector<Pass*> createPassesFromList(const vector<string>& passNames) {
@@ -391,6 +382,9 @@ class Main {
       }
     }
 
+    // CHECK(llvm::verifyModule(RTC.GetModule()))
+    //     << "Lifted IR module is broken.";
+
     return RTC.TakeModule();
   }
 
@@ -399,17 +393,21 @@ class Main {
     PrettyStackTraceString optimize("Optimizing LLVM IR");
 
     // Phase 3: make into functions with arguments, run codegen.
-    auto passManager = createBasePassManager();
-    passManager.add(new ExecutableWrapper(executable));
-    passManager.add(createParameterRegistryPass());
-    passManager.add(createExternalAAWrapperPass(&Main::aliasAnalysisHooks));
+    legacy::PassManager pm;
+    pm.add(llvm::createTypeBasedAAWrapperPass());
+    pm.add(llvm::createScopedNoAliasAAWrapperPass());
+    pm.add(llvm::createBasicAAWrapperPass());
+    pm.add(fcd::createAddressSpaceAliasAnalysis());
+    pm.add(new ExecutableWrapper(executable));
+    pm.add(createParameterRegistryPass());
+    pm.add(llvm::createExternalAAWrapperPass(&Main::aliasAnalysisHooks));
     for (Pass* pass : optimizeAndTransformPasses) {
-      passManager.add(pass);
+      pm.add(pass);
     }
-    passManager.run(module);
+    pm.run(module);
 
 #ifdef FCD_DEBUG
-    if (verifyModule(module, &errorOutput)) {
+    if (llvm::verifyModule(module, &errorOutput)) {
       // errors!
       return false;
     }
@@ -457,27 +455,27 @@ class Main {
     // Default passes
     vector<string> passNames = {
         "globaldce",
-        "fixindirects",
-        "argrec",
+        "fixindirects", // fcd
+        "argrec", // fcd
         "sroa",
-        "intnarrowing",
-        "signext",
+        "intnarrowing", // fcd
+        "signext", // fcd
         "instcombine",
-        "intops",
-        "simplifyconditions",
+        "intops", // fcd
+        "simplifyconditions", // fcd
         // <-- custom passes go here with the default pass pipeline
         "instcombine",
         "gvn",
         "simplifycfg",
         "instcombine",
         "gvn",
-        "recoverstackframe",
+        "recoverstackframe", // fcd
         "dse",
         "sccp",
         "simplifycfg",
-        "eliminatecasts",
+        "eliminatecasts", // fcd
         "instcombine",
-        "memssadle",
+        "memssadle", // fcd
         "dse",
         "instcombine",
         "sroa",
