@@ -114,7 +114,7 @@ bool hackhack_fillFromParamInfo(LLVMContext& ctx, ParameterRegistry& registry, C
 	vector<Type*> params(integerLikeParameters, intType);
 	FunctionType* fType = FunctionType::get(returnType, params, false);
 	
-	for (CallingConvention* cc : registry)
+	for (CallingConvention* cc : registry.getCallConvChain())
 	{
 		if (cc->analyzeFunctionType(registry, info, *fType))
 		{
