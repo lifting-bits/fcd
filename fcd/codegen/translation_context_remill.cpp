@@ -27,12 +27,15 @@
 #include <llvm/Transforms/Scalar.h>
 #include <llvm/Transforms/Scalar/GVN.h>
 
+#include <iostream>
 #include <sstream>
 #include <string>
 
 #include "remill/BC/Util.h"
 
 #include "fcd/codegen/translation_context_remill.h"
+#include "fcd/pass_argrec_remill.h"
+#include "fcd/pass_asaa.h"
 
 namespace fcd {
 namespace {
@@ -351,14 +354,7 @@ llvm::Function *RemillTranslationContext::DefineFunction(uint64_t addr) {
                  << "; returning current function instead";
     return func;
   }
-
-  llvm::legacy::FunctionPassManager func_pass_manager(module.get());
-  func_pass_manager.add(llvm::createPromoteMemoryToRegisterPass());
-  func_pass_manager.add(llvm::createReassociatePass());
-  func_pass_manager.add(llvm::createDeadStoreEliminationPass());
-  func_pass_manager.add(llvm::createDeadCodeEliminationPass());
-  func_pass_manager.doInitialization();
-
+  
   remill::CloneBlockFunctionInto(func);
 
   func->removeFnAttr(llvm::Attribute::AlwaysInline);
@@ -380,8 +376,6 @@ llvm::Function *RemillTranslationContext::DefineFunction(uint64_t addr) {
   auto pc_val = llvm::ConstantInt::get(pc_arg->getType(), addr);
   pc_arg->replaceAllUsesWith(pc_val);
 
-  func_pass_manager.run(*func);
-  func_pass_manager.doFinalization();
   return func;
 }
 
@@ -494,13 +488,12 @@ remill::Instruction &RemillTranslationContext::LiftInst(llvm::BasicBlock *block,
 
 const StubInfo *RemillTranslationContext::GetStubInfo(
     llvm::Function *func) const {
-
   if (func->isDeclaration()) {
     return nullptr;
   }
-  
+
   llvm::Value *read = nullptr;
-  
+
   auto term = func->getEntryBlock().getTerminator();
   if (llvm::isa<llvm::ReturnInst>(term)) {
     if (auto jump = llvm::dyn_cast<llvm::CallInst>(term->getPrevNode())) {
@@ -513,7 +506,7 @@ const StubInfo *RemillTranslationContext::GetStubInfo(
   if (!read) {
     return nullptr;
   }
-  
+
   llvm::ConstantInt *addr = nullptr;
   if (auto call = llvm::dyn_cast<llvm::CallInst>(read)) {
     if (call->getCalledFunction() == intrinsics->read_memory_64) {
@@ -539,15 +532,28 @@ const StubInfo *RemillTranslationContext::GetStubInfo(
 }
 
 void RemillTranslationContext::FinalizeModule() {
+  auto AACallBack = [](llvm::Pass &p, llvm::Function &f, llvm::AAResults &r) {
+    if (auto asaa = p.getAnalysisIfAvailable<AddressSpaceAAWrapperPass>())
+      r.addAAResult(asaa->getResult());
+  };
+
   llvm::legacy::PassManager module_pass_manager;
   // module_pass_manager.add(llvm::createVerifierPass());
-  // module_pass_manager.add(llvm::createCFGSimplificationPass());
+  module_pass_manager.add(llvm::createExternalAAWrapperPass(AACallBack));
   module_pass_manager.add(llvm::createAlwaysInlinerLegacyPass());
-  // module_pass_manager.add(llvm::createExternalAAWrapperPass(&Main::aliasAnalysisHooks));
+
+  module_pass_manager.add(createRemillArgumentRecoveryPass());
+
+  module_pass_manager.add(llvm::createPromoteMemoryToRegisterPass());
+  module_pass_manager.add(llvm::createReassociatePass());
+  module_pass_manager.add(llvm::createDeadStoreEliminationPass());
+  module_pass_manager.add(llvm::createDeadCodeEliminationPass());
+  // module_pass_manager.add(llvm::createCFGSimplificationPass());
+  
   module_pass_manager.add(llvm::createDeadCodeEliminationPass());
   module_pass_manager.add(llvm::createInstructionCombiningPass());
-  module_pass_manager.add(llvm::createGVNPass());
   module_pass_manager.add(llvm::createDeadStoreEliminationPass());
+  module_pass_manager.add(llvm::createGVNPass());
   module_pass_manager.add(llvm::createInstructionCombiningPass());
   module_pass_manager.add(llvm::createGlobalDCEPass());
 
@@ -555,16 +561,16 @@ void RemillTranslationContext::FinalizeModule() {
   RemoveIntrinsics(module.get());
   PrivatizeISELs(isels);
   module_pass_manager.run(*module);
-  
+
   RemoveIntrinsics(module.get());
-  
+
   // Lower memory intrinsics into loads and stores
   // Runtime memory address space is 0
   // Program memory address space is given by pmem_addr_space
   LowerMemOps(module.get(), pmem_addr_space);
-  
+
   // Attempt to annotate remaining functions as stubs
-  for (auto& func : *module) {
+  for (auto &func : *module) {
     if (auto stub_info = GetStubInfo(&func)) {
       func.setName(stub_info->name);
     }
