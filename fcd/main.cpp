@@ -80,6 +80,8 @@ DEFINE_string(frameworks, "",
               "Apple framework dirs to be used for declarations");
 DEFINE_string(includes, "", "Directories to search headers in");
 
+DECLARE_string(callconv);
+
 DECLARE_string(arch);
 DECLARE_string(os);
 
@@ -407,10 +409,10 @@ class Main {
     pm.run(module);
 
 #ifdef FCD_DEBUG
-    if (llvm::verifyModule(module, &errorOutput)) {
-      // errors!
-      return false;
-    }
+    // if (llvm::verifyModule(module, &errorOutput)) {
+    //   // errors!
+    //   return false;
+    // }
 #endif
     return true;
   }
@@ -457,31 +459,31 @@ class Main {
         "globaldce",
         "fixindirects", // fcd
         "argrec", // fcd
-        "sroa",
-        "intnarrowing", // fcd
-        "signext", // fcd
-        "instcombine",
-        "intops", // fcd
-        "simplifyconditions", // fcd
-        // <-- custom passes go here with the default pass pipeline
-        "instcombine",
-        "gvn",
-        "simplifycfg",
-        "instcombine",
-        "gvn",
-        "recoverstackframe", // fcd
-        "dse",
-        "sccp",
-        "simplifycfg",
-        "eliminatecasts", // fcd
-        "instcombine",
-        "memssadle", // fcd
-        "dse",
-        "instcombine",
-        "sroa",
-        "instcombine",
-        "globaldce",
-        "simplifycfg",
+        // "sroa",
+        // "intnarrowing", // fcd
+        // "signext", // fcd
+        // "instcombine",
+        // "intops", // fcd
+        // "simplifyconditions", // fcd
+        // // <-- custom passes go here with the default pass pipeline
+        // "instcombine",
+        // "gvn",
+        // "simplifycfg",
+        // "instcombine",
+        // "gvn",
+        // "recoverstackframe", // fcd
+        // "dse",
+        // "sccp",
+        // "simplifycfg",
+        // "eliminatecasts", // fcd
+        // "instcombine",
+        // "memssadle", // fcd
+        // "dse",
+        // "instcombine",
+        // "sroa",
+        // "instcombine",
+        // "globaldce",
+        // "simplifycfg",
     };
 
     if (FLAGS_pipeline == "default") {
