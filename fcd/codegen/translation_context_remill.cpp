@@ -543,12 +543,14 @@ void RemillTranslationContext::FinalizeModule() {
   module_pass_manager.add(llvm::createAlwaysInlinerLegacyPass());
 
   module_pass_manager.add(createRemillArgumentRecoveryPass());
+  // module_pass_manager.add(llvm::createDeadArgEliminationPass());
 
   module_pass_manager.add(llvm::createPromoteMemoryToRegisterPass());
   module_pass_manager.add(llvm::createReassociatePass());
   module_pass_manager.add(llvm::createDeadStoreEliminationPass());
   module_pass_manager.add(llvm::createDeadCodeEliminationPass());
   // module_pass_manager.add(llvm::createCFGSimplificationPass());
+  
   
   module_pass_manager.add(llvm::createDeadCodeEliminationPass());
   module_pass_manager.add(llvm::createInstructionCombiningPass());

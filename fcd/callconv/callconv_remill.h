@@ -29,7 +29,12 @@ class CallingConvention {
  public:
   explicit CallingConvention(llvm::CallingConv::ID cc_);
 
-  const std::vector<const char*> CallConvRegVars() const;
+  const std::vector<const char*> ParamRegs() const {
+    return RegsFromTable(arg_table);
+  }
+  const std::vector<const char*> ReturnRegs() const {
+    return RegsFromTable(ret_table);
+  }
   const char *StackPointerVarName(void) const { return sp_name; }
   bool IsReturnValVar(llvm::Value *val) const;
 
@@ -40,7 +45,10 @@ class CallingConvention {
   uint64_t num_loaded_stack_bytes;
   uint64_t num_stored_stack_bytes;
   const char *const sp_name;
-  const ArgConstraint *reg_table;
+  const ArgConstraint *arg_table;
+  const ArgConstraint *ret_table;
+
+  const std::vector<const char*> RegsFromTable(const ArgConstraint *table) const;
 
   CallingConvention(void) = delete;
 };
