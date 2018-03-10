@@ -354,7 +354,7 @@ llvm::Function *RemillTranslationContext::DefineFunction(uint64_t addr) {
                  << "; returning current function instead";
     return func;
   }
-  
+
   remill::CloneBlockFunctionInto(func);
 
   func->removeFnAttr(llvm::Attribute::AlwaysInline);
@@ -494,11 +494,13 @@ const StubInfo *RemillTranslationContext::GetStubInfo(
 
   llvm::Value *read = nullptr;
 
-  auto term = func->getEntryBlock().getTerminator();
-  if (llvm::isa<llvm::ReturnInst>(term)) {
-    if (auto jump = llvm::dyn_cast<llvm::CallInst>(term->getPrevNode())) {
-      if (jump->getCalledFunction() == intrinsics->jump) {
-        read = jump->getArgOperand(1);
+  auto& entry = func->getEntryBlock();
+  if (entry.size() > 1) {
+    if (auto term = llvm::dyn_cast<llvm::ReturnInst>(entry.getTerminator())) {
+      if (auto jump = llvm::dyn_cast<llvm::CallInst>(term->getPrevNode())) {
+        if (jump->getCalledFunction() == intrinsics->jump) {
+          read = jump->getArgOperand(1);
+        }
       }
     }
   }
@@ -538,20 +540,19 @@ void RemillTranslationContext::FinalizeModule() {
   };
 
   llvm::legacy::PassManager module_pass_manager;
-  // module_pass_manager.add(llvm::createVerifierPass());
   module_pass_manager.add(llvm::createExternalAAWrapperPass(AACallBack));
   module_pass_manager.add(llvm::createAlwaysInlinerLegacyPass());
 
   module_pass_manager.add(createRemillArgumentRecoveryPass());
+  // module_pass_manager.add(llvm::createVerifierPass());
   // module_pass_manager.add(llvm::createDeadArgEliminationPass());
 
   module_pass_manager.add(llvm::createPromoteMemoryToRegisterPass());
   module_pass_manager.add(llvm::createReassociatePass());
   module_pass_manager.add(llvm::createDeadStoreEliminationPass());
   module_pass_manager.add(llvm::createDeadCodeEliminationPass());
-  // module_pass_manager.add(llvm::createCFGSimplificationPass());
-  
-  
+  module_pass_manager.add(llvm::createCFGSimplificationPass());
+
   module_pass_manager.add(llvm::createDeadCodeEliminationPass());
   module_pass_manager.add(llvm::createInstructionCombiningPass());
   module_pass_manager.add(llvm::createDeadStoreEliminationPass());

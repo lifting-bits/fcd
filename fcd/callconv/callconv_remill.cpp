@@ -242,76 +242,76 @@ static uint64_t DefaultUsedStackBytes(llvm::CallingConv::ID cc) {
   }
 }
 
-// static const char *IntReturnValVar(const remill::Arch *arch,
-//                                    llvm::CallingConv::ID cc) {
-//   if (llvm::CallingConv::X86_64_SysV == cc || llvm::CallingConv::Win64 == cc) {
-//     return "RAX";
+static const char *IntReturnValVar(const remill::Arch *arch,
+                                   llvm::CallingConv::ID cc) {
+  if (llvm::CallingConv::X86_64_SysV == cc || llvm::CallingConv::Win64 == cc) {
+    return "RAX";
 
-//   } else if (llvm::CallingConv::X86_StdCall == cc ||
-//              llvm::CallingConv::X86_FastCall == cc ||
-//              llvm::CallingConv::X86_ThisCall == cc) {
-//     return "EAX";
+  } else if (llvm::CallingConv::X86_StdCall == cc ||
+             llvm::CallingConv::X86_FastCall == cc ||
+             llvm::CallingConv::X86_ThisCall == cc) {
+    return "EAX";
 
-//   } else if (llvm::CallingConv::C == cc) {
-//     if (arch->IsX86()) {
-//       return "EAX";  // cdecl.
+  } else if (llvm::CallingConv::C == cc) {
+    if (arch->IsX86()) {
+      return "EAX";  // cdecl.
 
-//     } else if (arch->IsAArch64()) {
-//       return "X0";
-//     }
-//   }
+    } else if (arch->IsAArch64()) {
+      return "X0";
+    }
+  }
 
-//   LOG(FATAL) << "Unknown ABI/calling convention: " << cc;
-//   return nullptr;
-// }
+  LOG(FATAL) << "Unknown ABI/calling convention: " << cc;
+  return nullptr;
+}
 
-// static const char *FloatReturnValVar(const remill::Arch *arch,
-//                                      llvm::CallingConv::ID cc,
-//                                      llvm::Type *type) {
-//   if (llvm::CallingConv::X86_64_SysV == cc || llvm::CallingConv::Win64 == cc) {
-//     return "XMM0";
+static const char *FloatReturnValVar(const remill::Arch *arch,
+                                     llvm::CallingConv::ID cc,
+                                     llvm::Type *type) {
+  if (llvm::CallingConv::X86_64_SysV == cc || llvm::CallingConv::Win64 == cc) {
+    return "XMM0";
 
-//   } else if (llvm::CallingConv::X86_StdCall == cc ||
-//              llvm::CallingConv::X86_FastCall == cc ||
-//              llvm::CallingConv::X86_ThisCall == cc) {
-//     return "ST0";
+  } else if (llvm::CallingConv::X86_StdCall == cc ||
+             llvm::CallingConv::X86_FastCall == cc ||
+             llvm::CallingConv::X86_ThisCall == cc) {
+    return "ST0";
 
-//   } else if (llvm::CallingConv::C == cc) {
-//     if (arch->IsX86()) {
-//       return "EAX";  // cdecl.
+  } else if (llvm::CallingConv::C == cc) {
+    if (arch->IsX86()) {
+      return "EAX";  // cdecl.
 
-//     } else if (arch->IsAArch64()) {
-//       if (type->isDoubleTy()) {
-//         return "D0";
-//       } else {
-//         CHECK(type->isFloatTy());
-//         return "S0";
-//       }
-//     }
-//   }
+    } else if (arch->IsAArch64()) {
+      if (type->isDoubleTy()) {
+        return "D0";
+      } else {
+        CHECK(type->isFloatTy());
+        return "S0";
+      }
+    }
+  }
 
-//   LOG(FATAL) << "Cannot decide where to put return value of type "
-//              << remill::LLVMThingToString(type) << " for calling convention "
-//              << cc;
+  LOG(FATAL) << "Cannot decide where to put return value of type "
+             << remill::LLVMThingToString(type) << " for calling convention "
+             << cc;
 
-//   return nullptr;
-// }
+  return nullptr;
+}
 
-// static const char *ReturnValVar(const remill::Arch *arch,
-//                                 llvm::CallingConv::ID cc, llvm::Type *type) {
-//   if (type->isPointerTy() || type->isIntegerTy()) {
-//     return IntReturnValVar(arch, cc);
-//   } else if (type->isX86_FP80Ty()) {
-//     return "ST0";
-//   } else if (type->isFloatTy() || type->isDoubleTy()) {
-//     return FloatReturnValVar(arch, cc, type);
-//   } else {
-//     LOG(FATAL) << "Cannot decide where to put return value of type "
-//                << remill::LLVMThingToString(type) << " for calling convention "
-//                << cc;
-//     return nullptr;
-//   }
-// }
+static const char *ReturnValVar(const remill::Arch *arch,
+                                llvm::CallingConv::ID cc, llvm::Type *type) {
+  if (type->isPointerTy() || type->isIntegerTy()) {
+    return IntReturnValVar(arch, cc);
+  } else if (type->isX86_FP80Ty()) {
+    return "ST0";
+  } else if (type->isFloatTy() || type->isDoubleTy()) {
+    return FloatReturnValVar(arch, cc, type);
+  } else {
+    LOG(FATAL) << "Cannot decide where to put return value of type "
+               << remill::LLVMThingToString(type) << " for calling convention "
+               << cc;
+    return nullptr;
+  }
+}
 
 }  // namespace
 
@@ -332,6 +332,10 @@ const std::vector<const char *> CallingConvention::RegsFromTable(
     result.push_back(table[i].var_name);
   }
   return result;
+}
+
+const char *CallingConvention::ReturnRegForType(llvm::Type *type) const {
+  return ReturnValVar(arch, cc, type);
 }
 
 }  // namespace fcd

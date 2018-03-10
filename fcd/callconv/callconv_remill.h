@@ -36,7 +36,7 @@ class CallingConvention {
     return RegsFromTable(ret_table);
   }
   const char *StackPointerVarName(void) const { return sp_name; }
-  bool IsReturnValVar(llvm::Value *val) const;
+  const char *ReturnRegForType(llvm::Type* type) const;
 
  private:
   const remill::Arch *arch;
