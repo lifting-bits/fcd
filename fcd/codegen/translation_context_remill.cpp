@@ -59,6 +59,7 @@ static void PrivatizeISELs(std::vector<llvm::GlobalVariable *> &isels) {
   }
 }
 
+// Stolen from mcsema
 static void RemoveFunction(llvm::Function *func) {
   if (!func->hasNUsesOrMore(1)) {
     func->eraseFromParent();
@@ -118,6 +119,7 @@ static void RemoveIntrinsics(llvm::Module *module) {
 }
 
 // Lower a memory read intrinsic into a `load` instruction.
+// Stolen from mcsema
 static void ReplaceMemReadOp(llvm::Module *module, const char *name,
                              llvm::Type *val_type, unsigned addr_space) {
   auto func = module->getFunction(name);
@@ -157,6 +159,7 @@ static void ReplaceMemReadOp(llvm::Module *module, const char *name,
 }
 
 // Lower a memory write intrinsic into a `store` instruction.
+// Stolen from mcsema
 static void ReplaceMemWriteOp(llvm::Module *module, const char *name,
                               llvm::Type *val_type, unsigned addr_space) {
   auto func = module->getFunction(name);
@@ -199,6 +202,25 @@ static void ReplaceMemWriteOp(llvm::Module *module, const char *name,
   RemoveFunction(func);
 }
 
+// Stolen from mcsema
+static void ReplaceBarrier(llvm::Module *module, const char *name) {
+  auto func = module->getFunction(name);
+  if (!func) {
+    return;
+  }
+
+  CHECK(func->isDeclaration())
+      << "Cannot lower already implemented memory intrinsic " << name;
+
+  auto callers = remill::CallersOf(func);
+  for (auto call_inst : callers) {
+    auto mem_ptr = call_inst->getArgOperand(0);
+    call_inst->replaceAllUsesWith(mem_ptr);
+    call_inst->eraseFromParent();
+  }
+}
+
+// Stolen from mcsema
 static void LowerMemOps(llvm::Module *module, unsigned addr_space) {
   auto &ctx = module->getContext();
 
@@ -562,6 +584,12 @@ void RemillTranslationContext::FinalizeModule() {
   // Runtime memory address space is 0
   // Program memory address space is given by pmem_addr_space
   LowerMemOps(module.get(), pmem_addr_space);
+  ReplaceBarrier(module.get(), "__remill_barrier_load_load");
+  ReplaceBarrier(module.get(), "__remill_barrier_load_store");
+  ReplaceBarrier(module.get(), "__remill_barrier_store_load");
+  ReplaceBarrier(module.get(), "__remill_barrier_store_store");
+  ReplaceBarrier(module.get(), "__remill_barrier_atomic_begin");
+  ReplaceBarrier(module.get(), "__remill_barrier_atomic_end");
 
   // Attempt to annotate remaining functions as stubs
   for (auto &func : *module) {
