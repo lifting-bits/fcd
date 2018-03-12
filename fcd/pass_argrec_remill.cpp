@@ -35,10 +35,10 @@ namespace fcd {
 
 namespace {
 
-static const char* sPrefix;
+static const char *sPrefix;
 
-static std::unordered_set<const char*> RegisterAliasSet(const char* reg) {
-  static const char* aliases[][9] = {{"AL", "AH", "AX", "EAX", "RAX", nullptr},
+static std::unordered_set<const char *> RegisterAliasSet(const char *reg) {
+  static const char *aliases[][9] = {{"AL", "AH", "AX", "EAX", "RAX", nullptr},
                                      {"CL", "CH", "CX", "ECX", "RCX", nullptr},
                                      {"DL", "DH", "DX", "EDX", "RDX", nullptr},
                                      {"SIL", "SI", "ESI", "RSI", nullptr},
@@ -48,7 +48,7 @@ static std::unordered_set<const char*> RegisterAliasSet(const char* reg) {
                                      {"R9B", "R9W", "R9D", "R9", nullptr},
                                      {nullptr}};
 
-  static std::unordered_map<const char*, const char**> resolver;
+  static std::unordered_map<const char *, const char **> resolver;
   if (resolver.empty()) {
     for (unsigned i = 0; aliases[i][0] != nullptr; ++i) {
       for (unsigned j = 0; aliases[i][j] != nullptr; ++j) {
@@ -57,7 +57,7 @@ static std::unordered_set<const char*> RegisterAliasSet(const char* reg) {
     }
   }
 
-  std::unordered_set<const char*> result({reg});
+  std::unordered_set<const char *> result({reg});
   auto iter = resolver.find(reg);
   if (iter != resolver.end()) {
     for (unsigned i = 0; iter->second[i] != nullptr; ++i) {
@@ -68,9 +68,9 @@ static std::unordered_set<const char*> RegisterAliasSet(const char* reg) {
   return result;
 }
 
-static std::unordered_set<llvm::User*> UsersOfVar(llvm::Function* func,
-                                                  llvm::Value* var) {
-  std::unordered_set<llvm::User*> result;
+static std::unordered_set<llvm::User *> UsersOfVar(llvm::Function *func,
+                                                   llvm::Value *var) {
+  std::unordered_set<llvm::User *> result;
   if (var->hasNUsesOrMore(2)) {
     for (auto var_user : var->users()) {
       if (auto addr = llvm::dyn_cast<llvm::LoadInst>(var_user)) {
@@ -84,11 +84,11 @@ static std::unordered_set<llvm::User*> UsersOfVar(llvm::Function* func,
 }
 
 template <typename T>
-static llvm::User* FirstUserOfVar(llvm::Function* func, llvm::Value* var,
-                                  T& instruction_list) {
+static llvm::User *FirstUserOfVar(llvm::Function *func, llvm::Value *var,
+                                  T &instruction_list) {
   auto users = UsersOfVar(func, var);
   if (!users.empty()) {
-    for (auto& inst : instruction_list) {
+    for (auto &inst : instruction_list) {
       if (users.count(&inst) > 0) {
         return &inst;
       }
@@ -98,10 +98,9 @@ static llvm::User* FirstUserOfVar(llvm::Function* func, llvm::Value* var,
 }
 
 template <typename T>
-static std::pair<llvm::User*, const char*> FirstUserOfReg(llvm::Function* func,
-                                                          const char* reg,
-                                                          T& instruction_list) {
-  std::unordered_map<llvm::User*, const char*> users;
+static std::pair<llvm::User *, const char *> FirstUserOfReg(
+    llvm::Function *func, const char *reg, T &instruction_list) {
+  std::unordered_map<llvm::User *, const char *> users;
   for (auto alias : RegisterAliasSet(reg)) {
     auto var = remill::FindVarInFunction(func, alias);
     if (auto user = FirstUserOfVar(func, var, instruction_list)) {
@@ -110,7 +109,7 @@ static std::pair<llvm::User*, const char*> FirstUserOfReg(llvm::Function* func,
   }
 
   if (!users.empty()) {
-    for (auto& inst : instruction_list) {
+    for (auto &inst : instruction_list) {
       auto it = users.find(&inst);
       if (it != users.end()) {
         return *it;
@@ -120,9 +119,9 @@ static std::pair<llvm::User*, const char*> FirstUserOfReg(llvm::Function* func,
   return {nullptr, nullptr};
 }
 
-static std::vector<llvm::BasicBlock*> TerminalBlocksOf(llvm::Function* func) {
-  std::vector<llvm::BasicBlock*> result;
-  for (auto& block : *func) {
+static std::vector<llvm::BasicBlock *> TerminalBlocksOf(llvm::Function *func) {
+  std::vector<llvm::BasicBlock *> result;
+  for (auto &block : *func) {
     if (llvm::isa<llvm::ReturnInst>(block.getTerminator())) {
       result.push_back(&block);
     }
@@ -130,8 +129,8 @@ static std::vector<llvm::BasicBlock*> TerminalBlocksOf(llvm::Function* func) {
   return result;
 }
 
-static llvm::Type* RecoverRetType(llvm::Function* func, CallingConvention& cc) {
-  std::unordered_set<llvm::Type*> found_types;
+static llvm::Type *RecoverRetType(llvm::Function *func, CallingConvention &cc) {
+  std::unordered_set<llvm::Type *> found_types;
   auto ret_regs = cc.ReturnRegs();
   for (auto block : TerminalBlocksOf(func)) {
     auto ilist = llvm::make_range(block->rbegin(), block->rend());
@@ -151,8 +150,8 @@ static llvm::Type* RecoverRetType(llvm::Function* func, CallingConvention& cc) {
                              : *found_types.begin();
 }
 
-static void LoadReturnRegToRetInsts(llvm::Function* func,
-                                    CallingConvention& cc) {
+static void LoadReturnRegToRetInsts(llvm::Function *func,
+                                    CallingConvention &cc) {
   llvm::IRBuilder<> ir(func->getContext());
   auto ret_type = func->getReturnType();
   if (!ret_type->isVoidTy()) {
@@ -181,15 +180,15 @@ static std::string TrimPrefix(std::string str) {
   return ref.str();
 }
 
-static void UpdateCalls(llvm::Function* old_func, llvm::Function* new_func,
-                        CallingConvention& cc) {
+static void UpdateCalls(llvm::Function *old_func, llvm::Function *new_func,
+                        CallingConvention &cc) {
   llvm::IRBuilder<> ir(new_func->getContext());
   for (auto old_call : remill::CallersOf(old_func)) {
     auto caller = old_call->getFunction();
     if (caller->getName().startswith(sPrefix)) {
       ir.SetInsertPoint(old_call);
-      std::vector<llvm::Value*> params;
-      for (auto& arg : new_func->args()) {
+      std::vector<llvm::Value *> params;
+      for (auto &arg : new_func->args()) {
         auto name = TrimPrefix(arg.getName().str());
         auto arg_var = remill::FindVarInFunction(caller, name);
         params.push_back(ir.CreateLoad(ir.CreateLoad(arg_var)));
@@ -210,9 +209,9 @@ static void UpdateCalls(llvm::Function* old_func, llvm::Function* new_func,
   }
 }
 
-static llvm::Function* DeclareParametrizedFunc(llvm::Function* func,
-                                               CallingConvention& cc) {
-  std::vector<const char*> used_regs;
+static llvm::Function *DeclareParametrizedFunc(llvm::Function *func,
+                                               CallingConvention &cc) {
+  std::vector<const char *> used_regs;
   // Get parameter regs from the callconv. Also add the stack pointer reg,
   // since it's used to access parameters passed by stack. Also add aliases.
   auto cc_regs = cc.ParamRegs();
@@ -228,7 +227,7 @@ static llvm::Function* DeclareParametrizedFunc(llvm::Function* func,
   }
 
   // Gather parameter types from register variable alloca's
-  std::vector<llvm::Type*> params;
+  std::vector<llvm::Type *> params;
   for (auto reg : used_regs) {
     auto var = remill::FindVarInFunction(func, reg);
     auto inst = llvm::dyn_cast<llvm::AllocaInst>(var);
@@ -249,7 +248,7 @@ static llvm::Function* DeclareParametrizedFunc(llvm::Function* func,
 
   CHECK(cc_func != nullptr);
 
-  for (auto& arg : cc_func->args()) {
+  for (auto &arg : cc_func->args()) {
     std::stringstream cc_arg_name;
     cc_arg_name << sPrefix << used_regs[arg.getArgNo()];
     arg.setName(cc_arg_name.str());
@@ -258,9 +257,9 @@ static llvm::Function* DeclareParametrizedFunc(llvm::Function* func,
   return cc_func;
 }
 
-static void StoreRegArgsToLocals(llvm::Function* func) {
+static void StoreRegArgsToLocals(llvm::Function *func) {
   llvm::IRBuilder<> ir(func->getEntryBlock().getTerminator());
-  for (auto& arg : func->args()) {
+  for (auto &arg : func->args()) {
     auto name = TrimPrefix(arg.getName().str());
     auto var = remill::FindVarInFunction(func, name);
     auto ptr = ir.CreateLoad(var);
@@ -268,9 +267,9 @@ static void StoreRegArgsToLocals(llvm::Function* func) {
   }
 }
 
-static void ConvertRemillArgsToLocals(llvm::Function* func) {
+static void ConvertRemillArgsToLocals(llvm::Function *func) {
   auto module = func->getParent();
-  auto& entry = func->getEntryBlock();
+  auto &entry = func->getEntryBlock();
 
   llvm::IRBuilder<> ir(&entry, entry.begin());
 
@@ -294,7 +293,7 @@ static void ConvertRemillArgsToLocals(llvm::Function* func) {
   arg_state->replaceAllUsesWith(loc_state);
 }
 
-static bool IsLiftedFunction(llvm::Function* func) {
+static bool IsLiftedFunction(llvm::Function *func) {
   auto module = func->getParent();
   if (func->getFunctionType() == remill::LiftedFunctionType(module)) {
     if (!func->getName().startswith("__remill")) {
@@ -316,11 +315,11 @@ RemillArgumentRecovery::RemillArgumentRecovery()
 }
 
 void RemillArgumentRecovery::getAnalysisUsage(
-    llvm::AnalysisUsage& usage) const {}
+    llvm::AnalysisUsage &usage) const {}
 
-bool RemillArgumentRecovery::runOnModule(llvm::Module& module) {
-  std::vector<llvm::Function*> new_funcs;
-  for (auto& func : module) {
+bool RemillArgumentRecovery::runOnModule(llvm::Module &module) {
+  std::vector<llvm::Function *> new_funcs;
+  for (auto &func : module) {
     if (IsLiftedFunction(&func)) {
       // func.dump();
       auto cc_func = DeclareParametrizedFunc(&func, cc);
@@ -342,7 +341,7 @@ bool RemillArgumentRecovery::runOnModule(llvm::Module& module) {
     auto name = TrimPrefix(func->getName());
     auto old_func = remill::FindFunction(&module, name);
     UpdateCalls(old_func, func, cc);
-    for (auto& arg : func->args()) {
+    for (auto &arg : func->args()) {
       auto arg_name = TrimPrefix(arg.getName());
       auto var = remill::FindVarInFunction(func, arg_name);
       arg.takeName(var);
@@ -356,7 +355,7 @@ bool RemillArgumentRecovery::runOnModule(llvm::Module& module) {
   return true;
 }
 
-llvm::ModulePass* createRemillArgumentRecoveryPass() {
+llvm::ModulePass *createRemillArgumentRecoveryPass() {
   return new RemillArgumentRecovery;
 }
 

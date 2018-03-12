@@ -16,21 +16,9 @@
 
 #include <glog/logging.h>
 
-#include <llvm/IR/BasicBlock.h>
-#include <llvm/IR/DataLayout.h>
-#include <llvm/IR/DerivedTypes.h>
-#include <llvm/IR/Function.h>
-#include <llvm/IR/IRBuilder.h>
-#include <llvm/IR/Instruction.h>
-#include <llvm/IR/LLVMContext.h>
-#include <llvm/IR/Module.h>
-#include <llvm/IR/Type.h>
-
 #include "remill/Arch/Arch.h"
 #include "remill/Arch/Name.h"
 #include "remill/BC/Util.h"
-#include "remill/BC/Version.h"
-#include "remill/OS/OS.h"
 
 #include "fcd/callconv/callconv_remill.h"
 
