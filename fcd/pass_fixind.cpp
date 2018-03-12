@@ -103,10 +103,10 @@ namespace
 					raw_string_ostream(name) << "indirect_" << indirectCallCount;
 					++indirectCallCount;
 					
-					FunctionType* ft = fcd::ArgumentRecovery::createFunctionType(*info, module, name);
+					FunctionType* ft = ArgumentRecovery::createFunctionType(*target, *info, module, name);
 					Value* callable = CastInst::CreateBitOrPointerCast(call->getOperand(2), ft->getPointerTo(), "", call);
 					Value* registers = call->getOperand(1);
-					CallInst* result = fcd::ArgumentRecovery::createCallSite(*target, *info, *callable, *registers, *call);
+					CallInst* result = ArgumentRecovery::createCallSite(*target, *info, *callable, *registers, *call);
 					result->takeName(call);
 					call->eraseFromParent();
 				}
