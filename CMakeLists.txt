@@ -102,6 +102,8 @@ endif()
 
 target_compile_definitions(fcd PRIVATE ${LLVM_DEFINITIONS} FCD_DEBUG=1)
 target_include_directories(fcd PRIVATE ${subdirs})
+target_include_directories(fcd SYSTEM PUBLIC ${PROJECT_INCLUDEDIRECTORIES})
+target_include_directories(fcd SYSTEM PUBLIC ${PROJECT_SOURCE_DIR})
 target_include_directories(fcd SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${PYTHON_INCLUDE_DIRS} ${CAPSTONE_INCLUDE_DIRS})
 
 target_compile_options(fcd PRIVATE --system-header-prefix=llvm/ --system-header-prefix=clang/ --system-header-prefix=clang-c/)

@@ -17,7 +17,6 @@
 #include "params_registry.h"
 #include "passes.h"
 #include "python_context.h"
-#include "translation_context.h"
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -47,18 +46,19 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <map>
+#include <list>
 #include <memory>
 #include <sstream>
 #include <string>
-#include <unordered_map>
 #include <vector>
+
+#include "fcd/codegen/translation_context_remill.h"
 
 using namespace llvm;
 using namespace std;
 
 #ifdef FCD_DEBUG
-[[gnu::used]] raw_ostream& llvm_errs() { return errs(); }
+[[gnu::used]] raw_ostream &llvm_errs() { return errs(); }
 #endif
 
 DEFINE_bool(partial, false,
@@ -66,8 +66,10 @@ DEFINE_bool(partial, false,
 DEFINE_bool(exclusive, false, "More restrictive version of -partial");
 DEFINE_bool(module_in, false, "Input file is a LLVM module");
 DEFINE_bool(module_out, false, "Output LLVM module");
-DEFINE_bool(optimize, true, "Optimize ");
-DEFINE_string(other_entry, "", "Add entry points from virtual addresses");
+DEFINE_bool(optimize, true, "Optimize lifted LLVM module");
+DEFINE_string(
+    other_entry, "",
+    "Add entry points from virtual addresses; Requires hexadecimal format");
 DEFINE_string(opt, "",
               "Insert LLVM IR passes; Allows passes from LLVM's opt or .py "
               "files; Requires default pass pipeline");
@@ -89,110 +91,32 @@ vector<T> parseListFlag(string flag, char sep) {
   string s;
   while (getline(f, s, sep)) {
     T tmp;
-    istringstream(s) >> tmp;
+    istringstream(s) >> std::hex >> tmp >> std::dec;
     res.push_back(tmp);
   }
   return res;
 }
 
-vector<string> headerSearchPath = parseListFlag<string>(FLAGS_includes, ',');
-vector<string> headers = parseListFlag<string>(FLAGS_headers, ',');
-vector<string> frameworks = parseListFlag<string>(FLAGS_frameworks, ',');
-vector<string> customPassPipeline = parseListFlag<string>(FLAGS_pipeline, ',');
-vector<string> additionalPasses = parseListFlag<string>(FLAGS_opt, ',');
-vector<unsigned long long> additionalEntryPoints =
-    parseListFlag<unsigned long long>(FLAGS_other_entry, ',');
-
-// cl::opt<string> inputFile(cl::Positional, cl::desc("<input program>"),
-//                           cl::Required, whitelist());
-// cl::list<unsigned long long> additionalEntryPoints(
-//     "other-entry",
-//     cl::desc(
-//         "Add entry point from virtual address (can be used multiple times)"),
-//     cl::CommaSeparated, whitelist());
-// cl::list<bool> partialDisassembly(
-//     "partial",
-//     cl::desc("Only decompile functions specified with --other-entry"),
-//     whitelist());
-// cl::list<bool> inputIsModule("module-in",
-//                              cl::desc("Input file is a LLVM module"),
-//                              whitelist());
-// cl::list<bool> outputIsModule("module-out", cl::desc("Output LLVM module"),
-//                               whitelist());
-
-// cl::list<string> additionalPasses(
-//     "opt",
-//     cl::desc("Insert LLVM optimization pass; a pass name ending in .py is "
-//              "interpreted as a Python script. Requires default pass
-//              pipeline."),
-//     whitelist());
-// cl::opt<string> customPassPipeline(
-//     "opt-pipeline", cl::desc("Customize pass pipeline. Empty string lets you
-//     "
-//                              "order passes through $EDITOR; otherwise, must
-//                              be "
-//                              "a whitespace-separated list of passes."),
-//     cl::init("default"), whitelist());
-// cl::list<string> headers(
-//     "header", cl::desc("Path of a header file to parse for function "
-//                        "declarations. Can be specified multiple times"),
-//     whitelist());
-// cl::list<string> frameworks(
-//     "framework", cl::desc("Path of an Apple framework that fcd should use for
-//     "
-//                           "declarations. Can be specified multiple times"),
-//     whitelist());
-// cl::list<string> headerSearchPath(
-//     "I", cl::desc("Additional directory to search headers in. Can be
-//     specified "
-//                   "multiple times"),
-//     whitelist());
-
-// template <int (*)()>  // templated to ensure multiple instatiation of the
-// static
-//                       // variables
-//                       inline int optCount(const cl::list<bool>& list) {
-//   static int count = 0;
-//   static bool counted = false;
-//   if (!counted) {
-//     for (bool opt : list) {
-//       count += opt ? 1 : -1;
-//     }
-//     counted = true;
-//   }
-//   return count;
-// }
-
-// inline int partialOptCount() {
-//   return optCount<partialOptCount>(partialDisassembly);
-// }
-
-// inline int moduleInCount() { return optCount<moduleInCount>(inputIsModule); }
-
-// inline int moduleOutCount() { return
-// optCount<moduleOutCount>(outputIsModule); }
-
-// void pruneOptionList(StringMap<cl::Option*>& list) {
-//   for (auto& pair : list) {
-//     if (!whitelist::isWhitelisted(*pair.second)) {
-//       pair.second->setHiddenFlag(cl::ReallyHidden);
-//     }
-//   }
-// }
+vector<string> headerSearchPath;
+vector<string> headers;
+vector<string> frameworks;
+vector<string> customPassPipeline;
+vector<string> additionalPasses;
+vector<uint64_t> additionalEntryPoints;
 
 template <typename T>
-string errorOf(const ErrorOr<T>& error) {
+string errorOf(const ErrorOr<T> &error) {
   return error.getError().message();
 }
 
 template <typename TAction>
-size_t forEachCall(Function* callee, unsigned stringArgumentIndex,
-                   TAction&& action) {
+size_t forEachCall(Function *callee, unsigned stringArgumentIndex,
+                   TAction &&action) {
   size_t count = 0;
-  for (Use& use : callee->uses()) {
+  for (Use &use : callee->uses()) {
     if (auto call = dyn_cast<CallInst>(use.getUser())) {
       unique_ptr<Instruction> eraseIfNecessary;
-      Value* operand = call->getOperand(stringArgumentIndex);
+      Value *operand = call->getOperand(stringArgumentIndex);
       if (auto constant = dyn_cast<ConstantExpr>(operand)) {
         eraseIfNecessary.reset(constant->getAsInstruction());
         operand = eraseIfNecessary.get();
@@ -210,30 +134,15 @@ size_t forEachCall(Function* callee, unsigned stringArgumentIndex,
   return count;
 }
 
-bool refillEntryPoints(const TranslationContext& transl,
-                       const EntryPointRepository& entryPoints,
-                       map<uint64_t, SymbolInfo>& toVisit, size_t iterations) {
-  if (isExclusiveDisassembly() || (isPartialDisassembly() && iterations > 1)) {
-    return false;
-  }
-
-  for (uint64_t entryPoint : transl.getDiscoveredEntryPoints()) {
-    if (auto symbolInfo = entryPoints.getInfo(entryPoint)) {
-      toVisit.insert({entryPoint, *symbolInfo});
-    }
-  }
-  return !toVisit.empty();
-}
-
 class Main {
   int argc;
-  char** argv;
+  char **argv;
 
   LLVMContext llvm;
   PythonContext python;
-  vector<Pass*> optimizeAndTransformPasses;
+  vector<Pass *> optimizeAndTransformPasses;
 
-  static void aliasAnalysisHooks(Pass& pass, Function& fn, AAResults& aar) {
+  static void aliasAnalysisHooks(Pass &pass, Function &fn, AAResults &aar) {
     if (auto prgmem =
             pass.getAnalysisIfAvailable<ProgramMemoryAAWrapperPass>()) {
       aar.addAAResult(prgmem->getResult());
@@ -252,9 +161,9 @@ class Main {
     return pm;
   }
 
-  vector<Pass*> createPassesFromList(const vector<string>& passNames) {
-    vector<Pass*> result;
-    PassRegistry* pr = PassRegistry::getPassRegistry();
+  vector<Pass *> createPassesFromList(const vector<string> &passNames) {
+    vector<Pass *> result;
+    PassRegistry *pr = PassRegistry::getPassRegistry();
     for (string passName : passNames) {
       auto begin = passName.begin();
       while (begin != passName.end()) {
@@ -284,14 +193,14 @@ class Main {
           } else {
             cerr << getProgramName() << ": couldn't load " << passName << ": "
                  << errorOf(passOrError) << endl;
-            return vector<Pass*>();
+            return vector<Pass *>();
           }
-        } else if (const PassInfo* pi = pr->getPassInfo(passName)) {
+        } else if (const PassInfo *pi = pr->getPassInfo(passName)) {
           result.push_back(pi->createPass());
         } else {
           cerr << getProgramName() << ": couldn't identify pass " << passName
                << endl;
-          return vector<Pass*>();
+          return vector<Pass *>();
         }
       }
     }
@@ -302,15 +211,15 @@ class Main {
     return result;
   }
 
-  vector<Pass*> interactivelyEditPassPipeline(
-      const string& editor, const vector<string>& basePasses) {
+  vector<Pass *> interactivelyEditPassPipeline(
+      const string &editor, const vector<string> &basePasses) {
     int fd;
     SmallVector<char, 100> path;
     if (auto errorCode = sys::fs::createTemporaryFile("fcd-pass-pipeline",
                                                       "txt", fd, path)) {
       errs() << getProgramName() << ": can't open temporary file for editing: "
              << errorCode.message() << "\n";
-      return vector<Pass*>();
+      return vector<Pass *>();
     }
 
     raw_fd_ostream passListOs(fd, true);
@@ -319,7 +228,7 @@ class Main {
     passListOs << "# Files starting with a # symbol are ignored.\n";
     passListOs << "# Names ending with .py are assumed to be Python scripts "
                   "implementing passes.\n";
-    for (const string& passName : basePasses) {
+    for (const string &passName : basePasses) {
       passListOs << passName << '\n';
     }
     passListOs.flush();
@@ -340,7 +249,7 @@ class Main {
       errs() << getProgramName()
              << ": interactive pass pipeline: editor returned status code "
              << errorCode << '\n';
-      return vector<Pass*>();
+      return vector<Pass *>();
     }
 
     ifstream passListIs(path.data());
@@ -359,163 +268,134 @@ class Main {
     return createPassesFromList(lines);
   }
 
-  // vector<Pass*> readPassPipelineFromString(const string& argString) {
-  //   stringstream ss(argString, ios::in);
-  //   vector<string> passes;
-  //   while (ss) {
-  //     passes.emplace_back();
-  //     string& passName = passes.back();
-  //     ss >> passName;
-  //     if (passName.size() == 0 || passName[0] == '#') {
-  //       passes.pop_back();
-  //     }
-  //   }
-  //   auto result = createPassesFromList(passes);
-  //   if (result.size() == 0) {
-  //     errs() << getProgramName() << ": empty custom pass list\n";
-  //   }
-  //   return result;
-  // }
-
  public:
-  Main(int argc, char** argv) : argc(argc), argv(argv), python(argv[0]) {
+  Main(int argc, char **argv) : argc(argc), argv(argv), python(argv[0]) {
     (void)argc;
     (void)this->argc;
   }
 
   string getProgramName() { return sys::path::stem(argv[0]); }
-  LLVMContext& getContext() { return llvm; }
+  LLVMContext &getContext() { return llvm; }
 
   ErrorOr<unique_ptr<Executable>> parseExecutable(
-      MemoryBuffer& executableCode) {
+      MemoryBuffer &executableCode) {
     auto start =
-        reinterpret_cast<const uint8_t*>(executableCode.getBufferStart());
-    auto end = reinterpret_cast<const uint8_t*>(executableCode.getBufferEnd());
+        reinterpret_cast<const uint8_t *>(executableCode.getBufferStart());
+    auto end = reinterpret_cast<const uint8_t *>(executableCode.getBufferEnd());
     return Executable::parse(start, end);
   }
 
-  ErrorOr<unique_ptr<Module>> generateAnnotatedModule(
-      Executable& executable, const string& moduleName = "fcd-out") {
-    x86_config config64 = {x86_isa64, 8, X86_REG_RIP, X86_REG_RSP, X86_REG_RBP};
-    TranslationContext transl(llvm, executable, config64, moduleName);
-
+  std::unique_ptr<llvm::Module> generateAnnotatedModule(
+      Executable &executable) {
+    fcd::RemillTranslationContext RTC(llvm, executable);
     // Load headers here, since this is the earliest point where we have an
     // executable and a module.
-    auto cDecls = HeaderDeclarations::create(
-        transl.get(), headerSearchPath.begin(), headerSearchPath.end(),
-        headers.begin(), headers.end(), frameworks.begin(), frameworks.end(),
-        errs());
-    if (!cDecls) {
-      return make_error_code(FcdError::Main_HeaderParsingError);
-    }
+    auto &module = RTC.GetModule();
+    auto cdecls = HeaderDeclarations::create(module, headerSearchPath, headers,
+                                             frameworks, errs());
 
-    EntryPointRepository entryPoints;
-    entryPoints.addProvider(executable);
-    entryPoints.addProvider(*cDecls);
+    CHECK(cdecls) << "Header file parsing error";
 
-    md::addIncludedFiles(transl.get(), cDecls->getIncludedFiles());
+    EntryPointRepository EPR;
+    EPR.addProvider(executable);
+    EPR.addProvider(*cdecls);
 
-    map<uint64_t, SymbolInfo> toVisit;
+    md::addIncludedFiles(RTC.GetModule(), cdecls->getIncludedFiles());
+
+    std::list<uint64_t> entry_points;
     if (isFullDisassembly()) {
-      for (uint64_t address : entryPoints.getVisibleEntryPoints()) {
-        auto symbolInfo = entryPoints.getInfo(address);
-        assert(symbolInfo != nullptr);
-        toVisit.insert({symbolInfo->virtualAddress, *symbolInfo});
+      for (uint64_t addr : EPR.getVisibleEntryPoints()) {
+        CHECK(EPR.getInfo(addr))
+            << "No symbol info for address " << std::hex << addr << std::dec;
+        entry_points.push_back(addr);
       }
     }
 
-    for (uint64_t address : unordered_set<uint64_t>(
-             additionalEntryPoints.begin(), additionalEntryPoints.end())) {
-      if (auto symbolInfo = entryPoints.getInfo(address)) {
-        toVisit.insert({symbolInfo->virtualAddress, *symbolInfo});
-      } else {
-        return make_error_code(FcdError::Main_EntryPointOutOfMappedMemory);
-      }
+    for (uint64_t addr : additionalEntryPoints) {
+      CHECK(EPR.getInfo(addr))
+          << "Additional entry address points outside of executable";
+      entry_points.push_back(addr);
     }
 
-    if (toVisit.size() == 0) {
-      return make_error_code(FcdError::Main_NoEntryPoint);
-    }
+    CHECK(!entry_points.empty()) << "No entry points found";
 
-    size_t iterations = 0;
-    do {
-      while (toVisit.size() > 0) {
-        auto iter = toVisit.begin();
-        auto functionInfo = iter->second;
-        toVisit.erase(iter);
+    auto IterCondition = [](size_t cur_size, size_t prev_size) {
+      // Only decode addresses already in entry_points.
+      // Do not add new ones.
+      if (isExclusiveDisassembly()) return false;
+      // Decode addresses in entry_points and add
+      // entry point addresses discovered in them.
+      if (isPartialDisassembly()) return prev_size == 0;
+      // Decode until there's nothing new to decode.
+      return cur_size > prev_size;
+    };
 
-        if (functionInfo.name.size() > 0) {
-          transl.setFunctionName(functionInfo.virtualAddress,
-                                 functionInfo.name);
-        }
-
-        if (Function* fn = transl.createFunction(functionInfo.virtualAddress)) {
-          if (Function* cFunction =
-                  cDecls->prototypeForAddress(functionInfo.virtualAddress)) {
-            md::setFinalPrototype(*fn, *cFunction);
-          }
-        } else {
-          // Couldn't decompile, abort
-          return make_error_code(FcdError::Main_DecompilationError);
+    size_t prev_size = 0;
+    while (IterCondition(entry_points.size(), prev_size)) {
+      prev_size = entry_points.size();
+      std::list<uint64_t> new_entry_points;
+      for (auto ep_addr : entry_points) {
+        for (auto inst_addr : RTC.DecodeFunction(ep_addr)) {
+          auto &inst = RTC.GetInstMap().find(inst_addr)->second;
+          if (inst.category == remill::Instruction::kCategoryDirectFunctionCall)
+            new_entry_points.push_back(inst.branch_taken_pc);
         }
       }
-      iterations++;
-    } while (refillEntryPoints(transl, entryPoints, toVisit, iterations));
+      entry_points.splice(entry_points.begin(), new_entry_points);
+      entry_points.sort();
+      entry_points.unique();
+    }
+
+    for (auto addr : entry_points) {
+      auto symbol_info = EPR.getInfo(addr);
+      if (auto func = RTC.DeclareFunction(symbol_info->virtualAddress)) {
+        if (symbol_info->name.size() > 0) {
+          func->setName(symbol_info->name);
+        }
+      }
+    }
+
+    for (auto addr : entry_points) {
+      auto func_addr = EPR.getInfo(addr)->virtualAddress;
+      auto func = RTC.DefineFunction(func_addr);
+      CHECK(func) << "Could not lift function at address " << std::hex
+                  << func_addr << std::dec;
+      if (auto cfunc = cdecls->prototypeForAddress(func_addr)) {
+        md::setFinalPrototype(*func, *cfunc);
+      }
+    }
 
     // Perform early optimizations to make the module suitable for analysis
-    auto module = transl.take();
-    legacy::PassManager phaseOne = createBasePassManager();
-    phaseOne.add(createExternalAAWrapperPass(&Main::aliasAnalysisHooks));
-    phaseOne.add(createDeadCodeEliminationPass());
-    phaseOne.add(createInstructionCombiningPass());
-    phaseOne.add(createRegisterPointerPromotionPass());
-    phaseOne.add(createGVNPass());
-    phaseOne.add(createDeadStoreEliminationPass());
-    phaseOne.add(createInstructionCombiningPass());
-    phaseOne.add(createGlobalDCEPass());
-    phaseOne.run(*module);
+    // legacy::PassManager phaseOne;
+    // phaseOne.add(llvm::createExternalAAWrapperPass(&Main::aliasAnalysisHooks));
+    // phaseOne.add(llvm::createDeadCodeEliminationPass());
+    // phaseOne.add(llvm::createInstructionCombiningPass());
+    // phaseOne.add(createRegisterPointerPromotionPass());
+    // phaseOne.add(llvm::createGVNPass());
+    // phaseOne.add(llvm::createDeadStoreEliminationPass());
+    // phaseOne.add(llvm::createInstructionCombiningPass());
+    // phaseOne.add(llvm::createGlobalDCEPass());
 
-    // Annotate stubs before returning module
-    Function* jumpIntrin = module->getFunction("x86_jump_intrin");
-    vector<Function*> functions;
-    for (Function& fn : module->getFunctionList()) {
-      if (md::isPrototype(fn)) {
-        continue;
-      }
+    RTC.FinalizeModule();
+    // phaseOne.run(RTC.GetModule());
+    // RTC.FinalizeModule();
 
-      BasicBlock& entry = fn.getEntryBlock();
-      auto terminator = entry.getTerminator();
-      if (isa<UnreachableInst>(terminator)) {
-        if (auto prev = dyn_cast<CallInst>(terminator->getPrevNode()))
-          if (prev->getCalledFunction() == jumpIntrin)
-            if (auto load = dyn_cast<LoadInst>(prev->getOperand(2)))
-              if (auto constantExpr =
-                      dyn_cast<ConstantExpr>(load->getPointerOperand())) {
-                unique_ptr<Instruction> inst(constantExpr->getAsInstruction());
-                if (auto int2ptr = dyn_cast<IntToPtrInst>(inst.get())) {
-                  auto value = cast<ConstantInt>(int2ptr->getOperand(0));
-                  if (const StubInfo* stubTarget =
-                          executable.getStubTarget(value->getLimitedValue())) {
-                    if (Function* cFunction =
-                            cDecls->prototypeForImportName(stubTarget->name)) {
-                      md::setIsStub(fn);
-                      md::setFinalPrototype(fn, *cFunction);
-                    }
-
-                    // If we identified no function from the header file, this
-                    // gives the import its real
-                    // name. Otherwise, it'll prefix the name with some number.
-                    fn.setName(stubTarget->name);
-                  }
-                }
-              }
+    for (auto &func : RTC.GetModule()) {
+      if (!md::isPrototype(func)) {
+        if (auto cfunc = cdecls->prototypeForImportName(func.getName())) {
+          if (&func != cfunc) {
+            md::setIsStub(func);
+            md::setFinalPrototype(func, *cfunc);
+          }
+        }
       }
     }
-    return move(module);
+
+    return RTC.TakeModule();
   }
 
-  bool optimizeAndTransformModule(Module& module, raw_ostream& errorOutput,
-                                  Executable* executable = nullptr) {
+  bool optimizeAndTransformModule(Module &module, raw_ostream &errorOutput,
+                                  Executable *executable = nullptr) {
     PrettyStackTraceString optimize("Optimizing LLVM IR");
 
     // Phase 3: make into functions with arguments, run codegen.
@@ -523,7 +403,7 @@ class Main {
     passManager.add(new ExecutableWrapper(executable));
     passManager.add(createParameterRegistryPass());
     passManager.add(createExternalAAWrapperPass(&Main::aliasAnalysisHooks));
-    for (Pass* pass : optimizeAndTransformPasses) {
+    for (Pass *pass : optimizeAndTransformPasses) {
       passManager.add(pass);
     }
     passManager.run(module);
@@ -537,14 +417,14 @@ class Main {
     return true;
   }
 
-  bool generateEquivalentPseudocode(Module& module, raw_ostream& output) {
+  bool generateEquivalentPseudocode(Module &module, raw_ostream &output) {
     PrettyStackTraceString pseudocode("Generating pseudo-C output");
 
     // Run that module through the output pass
     // UnwrapReturns happens after value propagation because value propagation
     // doesn't know that calls
     // are generally not safe to reorder.
-    AstBackEnd* backend = createAstBackEnd();
+    AstBackEnd *backend = createAstBackEnd();
     backend->addPass(new AstRemoveUndef);
     backend->addPass(new AstConsecutiveCombiner);
     backend->addPass(new AstNestedCombiner);
@@ -560,7 +440,7 @@ class Main {
   }
 
   static void initializePasses() {
-    auto& pr = *PassRegistry::getPassRegistry();
+    auto &pr = *PassRegistry::getPassRegistry();
     initializeCore(pr);
     initializeVectorization(pr);
     initializeIPO(pr);
@@ -576,13 +456,34 @@ class Main {
   bool prepareOptimizationPasses() {
     // Default passes
     vector<string> passNames = {
-        "globaldce", "fixindirects", "argrec", "sroa", "intnarrowing",
-        "signext", "instcombine", "intops", "simplifyconditions",
+        "globaldce",
+        "fixindirects",
+        "argrec",
+        "sroa",
+        "intnarrowing",
+        "signext",
+        "instcombine",
+        "intops",
+        "simplifyconditions",
         // <-- custom passes go here with the default pass pipeline
-        "instcombine", "gvn", "simplifycfg", "instcombine", "gvn",
-        "recoverstackframe", "dse", "sccp", "simplifycfg", "eliminatecasts",
-        "instcombine", "memssadle", "dse", "instcombine", "sroa", "instcombine",
-        "globaldce", "simplifycfg",
+        "instcombine",
+        "gvn",
+        "simplifycfg",
+        "instcombine",
+        "gvn",
+        "recoverstackframe",
+        "dse",
+        "sccp",
+        "simplifycfg",
+        "eliminatecasts",
+        "instcombine",
+        "memssadle",
+        "dse",
+        "instcombine",
+        "sroa",
+        "instcombine",
+        "globaldce",
+        "simplifycfg",
     };
 
     if (FLAGS_pipeline == "default") {
@@ -598,9 +499,10 @@ class Main {
         optimizeAndTransformPasses =
             interactivelyEditPassPipeline(editor, passNames);
       } else {
-        errs() << getProgramName() << ": environment has no EDITOR variable; "
-                                      "pass pipeline can't be edited "
-                                      "interactively\n";
+        errs() << getProgramName()
+               << ": environment has no EDITOR variable; "
+                  "pass pipeline can't be edited "
+                  "interactively\n";
         return false;
       }
     } else {
@@ -612,7 +514,7 @@ class Main {
     return optimizeAndTransformPasses.size() > 0;
   }
 };
-}
+}  // namespace
 
 bool isFullDisassembly() { return !FLAGS_partial && !FLAGS_exclusive; }
 
@@ -625,17 +527,27 @@ bool isEntryPoint(uint64_t vaddr) {
                 [&](uint64_t entryPoint) { return vaddr == entryPoint; });
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   stringstream ss("");
+
+  EnablePrettyStackTrace();
+  sys::PrintStackTraceOnErrorSignal(argv[0]);
+
   google::InitGoogleLogging(argv[0]);
   google::SetUsageMessage(ss.str());
   google::ParseCommandLineFlags(&argc, &argv, true);
 
+  headerSearchPath = parseListFlag<string>(FLAGS_includes, ',');
+  headers = parseListFlag<string>(FLAGS_headers, ',');
+  frameworks = parseListFlag<string>(FLAGS_frameworks, ',');
+  customPassPipeline = parseListFlag<string>(FLAGS_pipeline, ',');
+  additionalPasses = parseListFlag<string>(FLAGS_opt, ',');
+  additionalEntryPoints = parseListFlag<uint64_t>(FLAGS_other_entry, ',');
+
   CHECK(FLAGS_pipeline == "default" || FLAGS_opt.empty())
       << "Inserting LLVM IR passes only allowed when using default pipeline.";
 
-  CHECK(!FLAGS_os.empty())
-      << "Must specify an operating system name to --os.";
+  CHECK(!FLAGS_os.empty()) << "Must specify an operating system name to --os.";
 
   CHECK(!FLAGS_arch.empty())
       << "Must specify a machine code architecture name to --arch.";
@@ -690,23 +602,14 @@ int main(int argc, char** argv) {
     }
 
     executable = move(executableOrError.get());
-    string moduleName = sys::path::stem(inputFile);
-    auto moduleOrError =
-        mainObj.generateAnnotatedModule(*executable, moduleName);
-    if (!moduleOrError) {
-      cerr << program << ": couldn't build LLVM module out of " << inputFile
-           << ": " << errorOf(moduleOrError) << endl;
-      return 1;
-    }
-
-    module = move(moduleOrError.get());
+    module = mainObj.generateAnnotatedModule(*executable);
   }
 
   // Make sure that the module is legal
   size_t errorCount = 0;
-  if (Function* assertionFailure =
+  if (Function *assertionFailure =
           module->getFunction("x86_assertion_failure")) {
-    errorCount += forEachCall(assertionFailure, 0, [](const string& message) {
+    errorCount += forEachCall(assertionFailure, 0, [](const string &message) {
       cerr << "translation assertion failure: " << message << endl;
     });
   }
@@ -725,6 +628,8 @@ int main(int argc, char** argv) {
 
   if (FLAGS_module_out) {
     module->print(outs(), nullptr);
+    google::ShutDownCommandLineFlags();
+    google::ShutdownGoogleLogging();
     return 0;
   }
 
