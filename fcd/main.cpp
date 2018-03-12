@@ -58,7 +58,7 @@ using namespace llvm;
 using namespace std;
 
 #ifdef FCD_DEBUG
-[[gnu::used]] raw_ostream& llvm_errs() { return errs(); }
+[[gnu::used]] raw_ostream &llvm_errs() { return errs(); }
 #endif
 
 DEFINE_bool(partial, false,
@@ -105,18 +105,18 @@ vector<string> additionalPasses;
 vector<uint64_t> additionalEntryPoints;
 
 template <typename T>
-string errorOf(const ErrorOr<T>& error) {
+string errorOf(const ErrorOr<T> &error) {
   return error.getError().message();
 }
 
 template <typename TAction>
-size_t forEachCall(Function* callee, unsigned stringArgumentIndex,
-                   TAction&& action) {
+size_t forEachCall(Function *callee, unsigned stringArgumentIndex,
+                   TAction &&action) {
   size_t count = 0;
-  for (Use& use : callee->uses()) {
+  for (Use &use : callee->uses()) {
     if (auto call = dyn_cast<CallInst>(use.getUser())) {
       unique_ptr<Instruction> eraseIfNecessary;
-      Value* operand = call->getOperand(stringArgumentIndex);
+      Value *operand = call->getOperand(stringArgumentIndex);
       if (auto constant = dyn_cast<ConstantExpr>(operand)) {
         eraseIfNecessary.reset(constant->getAsInstruction());
         operand = eraseIfNecessary.get();
@@ -136,13 +136,13 @@ size_t forEachCall(Function* callee, unsigned stringArgumentIndex,
 
 class Main {
   int argc;
-  char** argv;
+  char **argv;
 
   LLVMContext llvm;
   PythonContext python;
-  vector<Pass*> optimizeAndTransformPasses;
+  vector<Pass *> optimizeAndTransformPasses;
 
-  static void aliasAnalysisHooks(Pass& pass, Function& fn, AAResults& aar) {
+  static void aliasAnalysisHooks(Pass &pass, Function &fn, AAResults &aar) {
     if (auto prgmem =
             pass.getAnalysisIfAvailable<ProgramMemoryAAWrapperPass>()) {
       aar.addAAResult(prgmem->getResult());
@@ -161,9 +161,9 @@ class Main {
     return pm;
   }
 
-  vector<Pass*> createPassesFromList(const vector<string>& passNames) {
-    vector<Pass*> result;
-    PassRegistry* pr = PassRegistry::getPassRegistry();
+  vector<Pass *> createPassesFromList(const vector<string> &passNames) {
+    vector<Pass *> result;
+    PassRegistry *pr = PassRegistry::getPassRegistry();
     for (string passName : passNames) {
       auto begin = passName.begin();
       while (begin != passName.end()) {
@@ -193,14 +193,14 @@ class Main {
           } else {
             cerr << getProgramName() << ": couldn't load " << passName << ": "
                  << errorOf(passOrError) << endl;
-            return vector<Pass*>();
+            return vector<Pass *>();
           }
-        } else if (const PassInfo* pi = pr->getPassInfo(passName)) {
+        } else if (const PassInfo *pi = pr->getPassInfo(passName)) {
           result.push_back(pi->createPass());
         } else {
           cerr << getProgramName() << ": couldn't identify pass " << passName
                << endl;
-          return vector<Pass*>();
+          return vector<Pass *>();
         }
       }
     }
@@ -211,15 +211,15 @@ class Main {
     return result;
   }
 
-  vector<Pass*> interactivelyEditPassPipeline(
-      const string& editor, const vector<string>& basePasses) {
+  vector<Pass *> interactivelyEditPassPipeline(
+      const string &editor, const vector<string> &basePasses) {
     int fd;
     SmallVector<char, 100> path;
     if (auto errorCode = sys::fs::createTemporaryFile("fcd-pass-pipeline",
                                                       "txt", fd, path)) {
       errs() << getProgramName() << ": can't open temporary file for editing: "
              << errorCode.message() << "\n";
-      return vector<Pass*>();
+      return vector<Pass *>();
     }
 
     raw_fd_ostream passListOs(fd, true);
@@ -228,7 +228,7 @@ class Main {
     passListOs << "# Files starting with a # symbol are ignored.\n";
     passListOs << "# Names ending with .py are assumed to be Python scripts "
                   "implementing passes.\n";
-    for (const string& passName : basePasses) {
+    for (const string &passName : basePasses) {
       passListOs << passName << '\n';
     }
     passListOs.flush();
@@ -249,7 +249,7 @@ class Main {
       errs() << getProgramName()
              << ": interactive pass pipeline: editor returned status code "
              << errorCode << '\n';
-      return vector<Pass*>();
+      return vector<Pass *>();
     }
 
     ifstream passListIs(path.data());
@@ -269,28 +269,28 @@ class Main {
   }
 
  public:
-  Main(int argc, char** argv) : argc(argc), argv(argv), python(argv[0]) {
+  Main(int argc, char **argv) : argc(argc), argv(argv), python(argv[0]) {
     (void)argc;
     (void)this->argc;
   }
 
   string getProgramName() { return sys::path::stem(argv[0]); }
-  LLVMContext& getContext() { return llvm; }
+  LLVMContext &getContext() { return llvm; }
 
   ErrorOr<unique_ptr<Executable>> parseExecutable(
-      MemoryBuffer& executableCode) {
+      MemoryBuffer &executableCode) {
     auto start =
-        reinterpret_cast<const uint8_t*>(executableCode.getBufferStart());
-    auto end = reinterpret_cast<const uint8_t*>(executableCode.getBufferEnd());
+        reinterpret_cast<const uint8_t *>(executableCode.getBufferStart());
+    auto end = reinterpret_cast<const uint8_t *>(executableCode.getBufferEnd());
     return Executable::parse(start, end);
   }
 
   std::unique_ptr<llvm::Module> generateAnnotatedModule(
-      Executable& executable) {
+      Executable &executable) {
     fcd::RemillTranslationContext RTC(llvm, executable);
     // Load headers here, since this is the earliest point where we have an
     // executable and a module.
-    auto& module = RTC.GetModule();
+    auto &module = RTC.GetModule();
     auto cdecls = HeaderDeclarations::create(module, headerSearchPath, headers,
                                              frameworks, errs());
 
@@ -336,7 +336,7 @@ class Main {
       std::list<uint64_t> new_entry_points;
       for (auto ep_addr : entry_points) {
         for (auto inst_addr : RTC.DecodeFunction(ep_addr)) {
-          auto& inst = RTC.GetInstMap().find(inst_addr)->second;
+          auto &inst = RTC.GetInstMap().find(inst_addr)->second;
           if (inst.category == remill::Instruction::kCategoryDirectFunctionCall)
             new_entry_points.push_back(inst.branch_taken_pc);
         }
@@ -380,7 +380,7 @@ class Main {
     // phaseOne.run(RTC.GetModule());
     // RTC.FinalizeModule();
 
-    for (auto& func : RTC.GetModule()) {
+    for (auto &func : RTC.GetModule()) {
       if (!md::isPrototype(func)) {
         if (auto cfunc = cdecls->prototypeForImportName(func.getName())) {
           if (&func != cfunc) {
@@ -394,8 +394,8 @@ class Main {
     return RTC.TakeModule();
   }
 
-  bool optimizeAndTransformModule(Module& module, raw_ostream& errorOutput,
-                                  Executable* executable = nullptr) {
+  bool optimizeAndTransformModule(Module &module, raw_ostream &errorOutput,
+                                  Executable *executable = nullptr) {
     PrettyStackTraceString optimize("Optimizing LLVM IR");
 
     // Phase 3: make into functions with arguments, run codegen.
@@ -403,7 +403,7 @@ class Main {
     passManager.add(new ExecutableWrapper(executable));
     passManager.add(createParameterRegistryPass());
     passManager.add(createExternalAAWrapperPass(&Main::aliasAnalysisHooks));
-    for (Pass* pass : optimizeAndTransformPasses) {
+    for (Pass *pass : optimizeAndTransformPasses) {
       passManager.add(pass);
     }
     passManager.run(module);
@@ -417,14 +417,14 @@ class Main {
     return true;
   }
 
-  bool generateEquivalentPseudocode(Module& module, raw_ostream& output) {
+  bool generateEquivalentPseudocode(Module &module, raw_ostream &output) {
     PrettyStackTraceString pseudocode("Generating pseudo-C output");
 
     // Run that module through the output pass
     // UnwrapReturns happens after value propagation because value propagation
     // doesn't know that calls
     // are generally not safe to reorder.
-    AstBackEnd* backend = createAstBackEnd();
+    AstBackEnd *backend = createAstBackEnd();
     backend->addPass(new AstRemoveUndef);
     backend->addPass(new AstConsecutiveCombiner);
     backend->addPass(new AstNestedCombiner);
@@ -440,7 +440,7 @@ class Main {
   }
 
   static void initializePasses() {
-    auto& pr = *PassRegistry::getPassRegistry();
+    auto &pr = *PassRegistry::getPassRegistry();
     initializeCore(pr);
     initializeVectorization(pr);
     initializeIPO(pr);
@@ -527,7 +527,7 @@ bool isEntryPoint(uint64_t vaddr) {
                 [&](uint64_t entryPoint) { return vaddr == entryPoint; });
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   stringstream ss("");
 
   EnablePrettyStackTrace();
@@ -607,9 +607,9 @@ int main(int argc, char** argv) {
 
   // Make sure that the module is legal
   size_t errorCount = 0;
-  if (Function* assertionFailure =
+  if (Function *assertionFailure =
           module->getFunction("x86_assertion_failure")) {
-    errorCount += forEachCall(assertionFailure, 0, [](const string& message) {
+    errorCount += forEachCall(assertionFailure, 0, [](const string &message) {
       cerr << "translation assertion failure: " << message << endl;
     });
   }

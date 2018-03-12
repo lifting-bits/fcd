@@ -323,8 +323,8 @@ std::unordered_set<uint64_t> RemillTranslationContext::DecodeFunction(
       continue;
     }
     auto &inst = GetOrDecodeInst(addr);
+    result.insert(inst.pc);
     if (inst.IsValid()) {
-      result.insert(inst.pc);
       switch (inst.category) {
         case remill::Instruction::kCategoryConditionalBranch:
           insts_to_decode.push(inst.branch_not_taken_pc);
@@ -495,34 +495,33 @@ remill::Instruction &RemillTranslationContext::LiftInst(llvm::BasicBlock *block,
 
 const StubInfo *RemillTranslationContext::GetStubInfo(
     llvm::Function *func) const {
-
   if (func->isDeclaration()) {
     return nullptr;
   }
-  
-  llvm::Value *read = nullptr;
-  
+
+  llvm::Value *jump_target = nullptr;
+
   auto term = func->getEntryBlock().getTerminator();
   if (llvm::isa<llvm::ReturnInst>(term)) {
     if (auto jump = llvm::dyn_cast<llvm::CallInst>(term->getPrevNode())) {
       if (jump->getCalledFunction() == intrinsics->jump) {
-        read = jump->getArgOperand(1);
+        jump_target = jump->getArgOperand(1);
       }
     }
   }
 
-  if (!read) {
+  if (!jump_target) {
     return nullptr;
   }
-  
+
   llvm::ConstantInt *addr = nullptr;
-  if (auto call = llvm::dyn_cast<llvm::CallInst>(read)) {
+  if (auto call = llvm::dyn_cast<llvm::CallInst>(jump_target)) {
     if (call->getCalledFunction() == intrinsics->read_memory_64) {
       addr = llvm::dyn_cast<llvm::ConstantInt>(call->getArgOperand(1));
     }
   }
 
-  if (auto load = llvm::dyn_cast<llvm::LoadInst>(read)) {
+  if (auto load = llvm::dyn_cast<llvm::LoadInst>(jump_target)) {
     if (load->getPointerAddressSpace() == pmem_addr_space) {
       auto read_op = load->getPointerOperand();
       if (auto const_expr = llvm::dyn_cast<llvm::ConstantExpr>(read_op)) {
@@ -556,16 +555,16 @@ void RemillTranslationContext::FinalizeModule() {
   RemoveIntrinsics(module.get());
   PrivatizeISELs(isels);
   module_pass_manager.run(*module);
-  
+
   RemoveIntrinsics(module.get());
-  
+
   // Lower memory intrinsics into loads and stores
   // Runtime memory address space is 0
   // Program memory address space is given by pmem_addr_space
   LowerMemOps(module.get(), pmem_addr_space);
-  
+
   // Attempt to annotate remaining functions as stubs
-  for (auto& func : *module) {
+  for (auto &func : *module) {
     if (auto stub_info = GetStubInfo(&func)) {
       func.setName(stub_info->name);
     }
