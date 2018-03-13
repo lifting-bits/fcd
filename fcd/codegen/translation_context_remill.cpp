@@ -36,6 +36,7 @@
 #include "fcd/codegen/translation_context_remill.h"
 #include "fcd/pass_argrec_remill.h"
 #include "fcd/pass_asaa.h"
+#include "fcd/pass_stackrec_remill.h"
 
 namespace fcd {
 namespace {
@@ -494,7 +495,7 @@ const StubInfo *RemillTranslationContext::GetStubInfo(
 
   llvm::Value *read = nullptr;
 
-  auto& entry = func->getEntryBlock();
+  auto &entry = func->getEntryBlock();
   if (entry.size() > 1) {
     if (auto term = llvm::dyn_cast<llvm::ReturnInst>(entry.getTerminator())) {
       if (auto jump = llvm::dyn_cast<llvm::CallInst>(term->getPrevNode())) {
@@ -544,6 +545,7 @@ void RemillTranslationContext::FinalizeModule() {
   module_pass_manager.add(llvm::createAlwaysInlinerLegacyPass());
 
   module_pass_manager.add(createRemillArgumentRecoveryPass());
+  module_pass_manager.add(createRemillStackRecoveryPass());
   // module_pass_manager.add(llvm::createVerifierPass());
   // module_pass_manager.add(llvm::createDeadArgEliminationPass());
 
