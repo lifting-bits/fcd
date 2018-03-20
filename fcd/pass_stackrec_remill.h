@@ -20,11 +20,15 @@
 #include <llvm/Analysis/Passes.h>
 #include <llvm/IR/Module.h>
 
+#include "fcd/callconv/callconv_remill.h"
+
 namespace fcd {
 
 class RemillStackRecovery : public llvm::ModulePass {
  private:
   const char *cPrefix = "stackrec_";
+  const unsigned pmem_addr_space = 1;
+  CallingConvention cc;
 
  public:
   static char ID;

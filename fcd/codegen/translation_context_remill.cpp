@@ -545,22 +545,18 @@ void RemillTranslationContext::FinalizeModule() {
   module_pass_manager.add(llvm::createAlwaysInlinerLegacyPass());
 
   module_pass_manager.add(createRemillArgumentRecoveryPass());
-  module_pass_manager.add(createRemillStackRecoveryPass());
-  // module_pass_manager.add(llvm::createVerifierPass());
-  // module_pass_manager.add(llvm::createDeadArgEliminationPass());
 
   module_pass_manager.add(llvm::createPromoteMemoryToRegisterPass());
   module_pass_manager.add(llvm::createReassociatePass());
   module_pass_manager.add(llvm::createDeadStoreEliminationPass());
   module_pass_manager.add(llvm::createDeadCodeEliminationPass());
   module_pass_manager.add(llvm::createCFGSimplificationPass());
-
-  module_pass_manager.add(llvm::createDeadCodeEliminationPass());
-  module_pass_manager.add(llvm::createInstructionCombiningPass());
-  module_pass_manager.add(llvm::createDeadStoreEliminationPass());
+  
+  module_pass_manager.add(llvm::createSROAPass());
   module_pass_manager.add(llvm::createGVNPass());
   module_pass_manager.add(llvm::createInstructionCombiningPass());
   module_pass_manager.add(llvm::createGlobalDCEPass());
+  // module_pass_manager.add(llvm::createVerifierPass());
 
   auto isels = FindISELs(module.get());
   RemoveIntrinsics(module.get());
@@ -568,11 +564,16 @@ void RemillTranslationContext::FinalizeModule() {
   module_pass_manager.run(*module);
 
   RemoveIntrinsics(module.get());
-
   // Lower memory intrinsics into loads and stores
   // Runtime memory address space is 0
   // Program memory address space is given by pmem_addr_space
   LowerMemOps(module.get(), pmem_addr_space);
+
+  llvm::legacy::PassManager pm2;
+  pm2.add(createRemillStackRecoveryPass());
+  pm2.add(llvm::createDeadStoreEliminationPass());
+  pm2.add(llvm::createDeadCodeEliminationPass());
+  pm2.run(*module);
 
   // Attempt to annotate remaining functions as stubs
   for (auto &func : *module) {
