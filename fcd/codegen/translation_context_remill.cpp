@@ -570,8 +570,11 @@ void RemillTranslationContext::FinalizeModule() {
   llvm::legacy::PassManager pm2;
   pm2.add(llvm::createInstructionCombiningPass());
   pm2.add(createRemillStackRecoveryPass());
+  // pm2.add(llvm::createPromoteMemoryToRegisterPass());
+  // pm2.add(llvm::createReassociatePass());
   pm2.add(llvm::createDeadStoreEliminationPass());
   pm2.add(llvm::createDeadCodeEliminationPass());
+  // pm2.add(llvm::createInstructionCombiningPass());
   // pm2.add(llvm::createVerifierPass());
   pm2.run(*module);
 

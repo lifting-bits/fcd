@@ -242,6 +242,63 @@ static std::vector<llvm::AllocaInst *> FindStackParams(
   return result;
 }
 
+// Replaces a CallInst with a new one that has stack passed
+// params added at the end of the parameter list.
+// Note: This deletes the invalidates the `call` pointer.
+static llvm::CallInst *LoadStackParamsToCall(
+    llvm::CallInst *call,
+    std::unordered_map<llvm::AllocaInst *, int64_t> &vars) {
+  llvm::IRBuilder<> ir(call);
+
+  std::vector<llvm::Value *> params;
+
+  auto func = call->getCalledFunction();
+  auto &sp_use = call->getArgOperandUse(GetStackPointerArg(func)->getArgNo());
+
+  for (auto &use : call->arg_operands()) {
+    if (use != sp_use) params.push_back(use.get());
+  }
+
+  for (auto var : FindStackParams(call, vars)) {
+    params.push_back(ir.CreateLoad(var));
+  }
+
+  auto new_call = ir.CreateCall(func, params);
+  call->replaceAllUsesWith(new_call);
+  call->eraseFromParent();
+
+  return new_call;
+}
+
+// Creates stores to local vars from function arguments and
+// takes names from the local vars to the args themselves.
+static void StoreStackParamsToLocals(
+    llvm::Function *func, llvm::Argument *sp,
+    std::map<int64_t, llvm::AllocaInst *> &stack_params) {
+  llvm::IRBuilder<> ir(func->getContext());
+
+  auto stack_idx = sp->getType()->getPrimitiveSizeInBits() / 8;
+  for (auto &arg : func->args()) {
+    if (arg.hasName()) {
+      continue;
+    }
+
+    auto stack_param = stack_params.find(stack_idx);
+    if (stack_param != stack_params.end()) {
+      auto var = stack_param->second;
+      ir.SetInsertPoint(var->getNextNode());
+      ir.CreateStore(&arg, var);
+      arg.takeName(var);
+    } else {
+      std::stringstream ss;
+      ss << sp->getName().str() << stack_idx;
+      arg.setName(ss.str());
+    }
+
+    stack_idx += arg.getType()->getPrimitiveSizeInBits() / 8;
+  }
+}
+
 }  // namespace
 
 char RemillStackRecovery::ID = 0;
@@ -276,47 +333,33 @@ bool RemillStackRecovery::runOnModule(llvm::Module &module) {
   std::vector<llvm::Function *> new_funcs;
 
   for (auto func : old_funcs) {
-    llvm::IRBuilder<> ir(func->getContext());
+    // Load stack paramaters into new calls to func and find
+    // a 'canonical' call among them. A canonical call is a
+    // call that will be used to determine the new prototype
+    // of func.
     llvm::CallInst *canonical = nullptr;
-    std::vector<llvm::CallInst *> new_calls;
     for (auto call : remill::CallersOf(func)) {
-      ir.SetInsertPoint(call);
-      std::vector<llvm::Value *> params;
-
-      auto &sp_use =
-          call->getArgOperandUse(GetStackPointerArg(func)->getArgNo());
-      for (auto &use : call->arg_operands()) {
-        if (use != sp_use) params.push_back(use.get());
-      }
-
-      for (auto var : FindStackParams(call, vars)) {
-        params.push_back(ir.CreateLoad(var));
-      }
-
-      auto new_call = ir.CreateCall(func, params);
-      new_calls.push_back(new_call);
-
-      call->replaceAllUsesWith(new_call);
-      call->eraseFromParent();
-
+      auto new_call = LoadStackParamsToCall(call, vars);
       if (!canonical) {
         canonical = new_call;
       }
-
       if (canonical->getNumArgOperands() > new_call->getNumArgOperands()) {
         canonical = new_call;
       }
     }
-
+    // Find all stack objects in `func` that correspond to
+    // function parameters passed via stack.
     std::map<int64_t, llvm::AllocaInst *> stack_params;
     for (auto var : vars) {
       if (var.first->getFunction() == func && var.second > 0) {
         stack_params[var.second] = var.first;
       }
     }
-
+    // Determine argument types for the new function prototype.
+    // This uses the canoncical call computed above. If no
+    // canonical call could be computed, use the types of stack
+    // parameters used inside `func`.
     auto sp_arg = GetStackPointerArg(func);
-
     std::vector<llvm::Type *> arg_types;
     if (canonical) {
       for (auto &arg : canonical->arg_operands()) {
@@ -332,44 +375,30 @@ bool RemillStackRecovery::runOnModule(llvm::Module &module) {
         arg_types.push_back(param.second->getAllocatedType());
       }
     }
-
+    // Declare a new function that will replace `func`
     auto new_func = DeclareParametrizedFunc(func, arg_types);
-
+    // Clone the contents of `func` into the new function.
     remill::ValueMap val_map;
     CloneFunctionInto(func, new_func, val_map);
-
-    for (auto call : new_calls) {
-      call->setCalledFunction(new_func);
+    // Make values in `stack_params` point to the new function.
+    for (auto &item : stack_params) {
+      auto var = llvm::dyn_cast<llvm::AllocaInst>(val_map[item.second]);
+      CHECK(var != nullptr);
+      item.second = var;
     }
 
-    // Take names from local arg vars to the args themselves
-    // Also create stores to he local arg vars from the args
-    auto stack_idx = sp_arg->getType()->getPrimitiveSizeInBits() / 8;
-    for (auto &arg : new_func->args()) {
-      if (arg.hasName()) {
-        continue;
-      }
-
-      auto stack_param = stack_params.find(stack_idx);
-      if (stack_param != stack_params.end()) {
-        auto var =
-            llvm::dyn_cast<llvm::AllocaInst>(val_map[stack_param->second]);
-        CHECK(var != nullptr);
-        ir.SetInsertPoint(var->getNextNode());
-        ir.CreateStore(&arg, var);
-        arg.takeName(var);
-      } else {
-        std::stringstream ss;
-        ss << sp_arg->getName().str() << stack_idx;
-        arg.setName(ss.str());
-      }
-
-      stack_idx += arg.getType()->getPrimitiveSizeInBits() / 8;
+    StoreStackParamsToLocals(new_func, sp_arg, stack_params);
+    // Change the called function in new calls from the old
+    // function to the new one. The call parameter list
+    // and the prototype of the called function should now
+    // be consistent.
+    for (auto call : remill::CallersOf(func)) {
+      call->setCalledFunction(new_func);
     }
 
     new_funcs.push_back(new_func);
   }
-
+  // Take the names from old functions and delete them.
   auto new_func = new_funcs.begin();
   for (auto old_func : old_funcs) {
     (*new_func)->takeName(old_func);
