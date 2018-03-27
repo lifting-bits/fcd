@@ -129,6 +129,12 @@ static std::vector<llvm::BasicBlock *> TerminalBlocksOf(llvm::Function *func) {
   return result;
 }
 
+// This function looks at blocks that have a llvm::ReturnInst in them. Traverses
+// them backwards and looks for a first use of an alias of a return regiser
+// defined by the callconv. If the user is a store, then the type of the value
+// stored into the register is declared a candidate for the return type of the
+// function. If all found candidates are of the same type, the type is declared
+// the return type of the function. Otherwise the return type is set to void.
 static llvm::Type *RecoverRetType(llvm::Function *func, CallingConvention &cc) {
   std::unordered_set<llvm::Type *> found_types;
   auto ret_regs = cc.ReturnRegs();
