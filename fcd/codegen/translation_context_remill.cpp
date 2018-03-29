@@ -255,11 +255,13 @@ static void LowerMemOps(llvm::Module *module, unsigned addr_space) {
 
 static bool IsTerminator(remill::Instruction &inst) {
   switch (inst.category) {
+    case remill::Instruction::kCategoryInvalid:
+    case remill::Instruction::kCategoryError:
     case remill::Instruction::kCategoryDirectJump:
     case remill::Instruction::kCategoryIndirectJump:
     case remill::Instruction::kCategoryConditionalBranch:
+    case remill::Instruction::kCategoryConditionalAsyncHyperCall:
     case remill::Instruction::kCategoryFunctionReturn:
-    case remill::Instruction::kCategoryError:
       return true;
     default:
       return false;
@@ -415,7 +417,8 @@ llvm::BasicBlock *RemillTranslationContext::LiftBlock(llvm::Function *func,
   }
 
   remill::Instruction inst;
-  while (!IsTerminator(inst)) {
+  
+  do {
     inst.Reset();
     inst = LiftInst(block, addr);
     addr += inst.NumBytes();
@@ -436,7 +439,8 @@ llvm::BasicBlock *RemillTranslationContext::LiftBlock(llvm::Function *func,
       default:
         break;
     }
-  }
+  } while (!IsTerminator(inst));
+
   return block;
 }
 
@@ -444,9 +448,10 @@ remill::Instruction &RemillTranslationContext::LiftInst(llvm::BasicBlock *block,
                                                         uint64_t addr) {
   auto &inst = GetOrDecodeInst(addr);
 
-  CHECK(remill::kLiftedInstruction == lifter->LiftIntoBlock(inst, block))
-      << "Can't lift instruction " << inst.Serialize() << " at " << std::hex
-      << addr << std::dec;
+  if (remill::kLiftedInstruction != lifter->LiftIntoBlock(inst, block)) {
+    LOG(WARNING) << "Can't lift instruction " << inst.Serialize() << " at "
+                 << std::hex << addr << std::dec;
+  }
 
   auto func = block->getParent();
   llvm::IRBuilder<> builder(block);
@@ -499,6 +504,7 @@ remill::Instruction &RemillTranslationContext::LiftInst(llvm::BasicBlock *block,
       builder.CreateRet(remill::LoadMemoryPointer(block));
       break;
 
+    case remill::Instruction::kCategoryInvalid:
     case remill::Instruction::kCategoryError:
       remill::AddTerminatingTailCall(block, intrinsics->error);
       break;
@@ -564,7 +570,7 @@ void RemillTranslationContext::FinalizeModule() {
   module_pass_manager.add(llvm::createExternalAAWrapperPass(AACallBack));
   module_pass_manager.add(llvm::createAlwaysInlinerLegacyPass());
 
-  module_pass_manager.add(createRemillArgumentRecoveryPass());
+  // module_pass_manager.add(createRemillArgumentRecoveryPass());
 
   module_pass_manager.add(llvm::createPromoteMemoryToRegisterPass());
   module_pass_manager.add(llvm::createReassociatePass());
@@ -579,8 +585,9 @@ void RemillTranslationContext::FinalizeModule() {
   auto isels = FindISELs(module.get());
   RemoveIntrinsics(module.get());
   PrivatizeISELs(isels);
+  // module->dump();
   module_pass_manager.run(*module);
-  
+
   RemoveIntrinsics(module.get());
   // Lower memory intrinsics into loads and stores
   // Runtime memory address space is 0
@@ -595,7 +602,7 @@ void RemillTranslationContext::FinalizeModule() {
 
   llvm::legacy::PassManager pm2;
   pm2.add(llvm::createInstructionCombiningPass());
-  pm2.add(createRemillStackRecoveryPass());
+  // pm2.add(createRemillStackRecoveryPass());
   // pm2.add(llvm::createPromoteMemoryToRegisterPass());
   // pm2.add(llvm::createReassociatePass());
   pm2.add(llvm::createDeadStoreEliminationPass());
