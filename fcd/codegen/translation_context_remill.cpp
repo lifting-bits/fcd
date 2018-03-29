@@ -417,7 +417,7 @@ llvm::BasicBlock *RemillTranslationContext::LiftBlock(llvm::Function *func,
   }
 
   remill::Instruction inst;
-  
+
   do {
     inst.Reset();
     inst = LiftInst(block, addr);
@@ -448,9 +448,10 @@ remill::Instruction &RemillTranslationContext::LiftInst(llvm::BasicBlock *block,
                                                         uint64_t addr) {
   auto &inst = GetOrDecodeInst(addr);
 
-  if (remill::kLiftedInstruction != lifter->LiftIntoBlock(inst, block)) {
-    LOG(WARNING) << "Can't lift instruction " << inst.Serialize() << " at "
-                 << std::hex << addr << std::dec;
+  if (inst.IsValid()) {
+    CHECK(remill::kLiftedInstruction == lifter->LiftIntoBlock(inst, block))
+        << "Can't lift instruction " << inst.Serialize() << " at " << std::hex
+        << addr << std::dec;
   }
 
   auto func = block->getParent();
@@ -523,11 +524,13 @@ const StubInfo *RemillTranslationContext::GetStubInfo(
 
   llvm::Value *jump_target = nullptr;
 
-  auto term = func->getEntryBlock().getTerminator();
-  if (llvm::isa<llvm::ReturnInst>(term)) {
-    if (auto jump = llvm::dyn_cast<llvm::CallInst>(term->getPrevNode())) {
-      if (jump->getCalledFunction() == intrinsics->jump) {
-        jump_target = jump->getArgOperand(1);
+  auto &entry = func->getEntryBlock();
+  if (entry.size() > 1) {
+    if (auto term = llvm::dyn_cast<llvm::ReturnInst>(entry.getTerminator())) {
+      if (auto jump = llvm::dyn_cast<llvm::CallInst>(term->getPrevNode())) {
+        if (jump->getCalledFunction() == intrinsics->jump) {
+          jump_target = jump->getArgOperand(1);
+        }
       }
     }
   }
@@ -570,7 +573,7 @@ void RemillTranslationContext::FinalizeModule() {
   module_pass_manager.add(llvm::createExternalAAWrapperPass(AACallBack));
   module_pass_manager.add(llvm::createAlwaysInlinerLegacyPass());
 
-  // module_pass_manager.add(createRemillArgumentRecoveryPass());
+  module_pass_manager.add(createRemillArgumentRecoveryPass());
 
   module_pass_manager.add(llvm::createPromoteMemoryToRegisterPass());
   module_pass_manager.add(llvm::createReassociatePass());
@@ -602,7 +605,7 @@ void RemillTranslationContext::FinalizeModule() {
 
   llvm::legacy::PassManager pm2;
   pm2.add(llvm::createInstructionCombiningPass());
-  // pm2.add(createRemillStackRecoveryPass());
+  pm2.add(createRemillStackRecoveryPass());
   // pm2.add(llvm::createPromoteMemoryToRegisterPass());
   // pm2.add(llvm::createReassociatePass());
   pm2.add(llvm::createDeadStoreEliminationPass());
