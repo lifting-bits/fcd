@@ -80,6 +80,8 @@ DEFINE_string(frameworks, "",
               "Apple framework dirs to be used for declarations");
 DEFINE_string(includes, "", "Directories to search headers in");
 
+DECLARE_string(callconv);
+
 DECLARE_string(arch);
 DECLARE_string(os);
 
@@ -144,7 +146,7 @@ class Main {
 
   static void aliasAnalysisHooks(Pass &pass, Function &fn, AAResults &aar) {
     if (auto prgmem =
-            pass.getAnalysisIfAvailable<ProgramMemoryAAWrapperPass>()) {
+            pass.getAnalysisIfAvailable<fcd::AddressSpaceAAWrapperPass>()) {
       aar.addAAResult(prgmem->getResult());
     }
     if (auto params = pass.getAnalysisIfAvailable<ParameterRegistry>()) {
@@ -152,18 +154,9 @@ class Main {
     }
   }
 
-  static legacy::PassManager createBasePassManager() {
-    legacy::PassManager pm;
-    pm.add(createTypeBasedAAWrapperPass());
-    pm.add(createScopedNoAliasAAWrapperPass());
-    pm.add(createBasicAAWrapperPass());
-    pm.add(createProgramMemoryAliasAnalysis());
-    return pm;
-  }
-
-  vector<Pass *> createPassesFromList(const vector<string> &passNames) {
-    vector<Pass *> result;
-    PassRegistry *pr = PassRegistry::getPassRegistry();
+  vector<Pass*> createPassesFromList(const vector<string>& passNames) {
+    vector<Pass*> result;
+    PassRegistry* pr = PassRegistry::getPassRegistry();
     for (string passName : passNames) {
       auto begin = passName.begin();
       while (begin != passName.end()) {
@@ -391,6 +384,9 @@ class Main {
       }
     }
 
+    // CHECK(llvm::verifyModule(RTC.GetModule()))
+    //     << "Lifted IR module is broken.";
+
     return RTC.TakeModule();
   }
 
@@ -399,20 +395,24 @@ class Main {
     PrettyStackTraceString optimize("Optimizing LLVM IR");
 
     // Phase 3: make into functions with arguments, run codegen.
-    auto passManager = createBasePassManager();
-    passManager.add(new ExecutableWrapper(executable));
-    passManager.add(createParameterRegistryPass());
-    passManager.add(createExternalAAWrapperPass(&Main::aliasAnalysisHooks));
-    for (Pass *pass : optimizeAndTransformPasses) {
-      passManager.add(pass);
+    legacy::PassManager pm;
+    pm.add(llvm::createTypeBasedAAWrapperPass());
+    pm.add(llvm::createScopedNoAliasAAWrapperPass());
+    pm.add(llvm::createBasicAAWrapperPass());
+    pm.add(fcd::createAddressSpaceAliasAnalysis());
+    pm.add(new ExecutableWrapper(executable));
+    pm.add(createParameterRegistryPass());
+    pm.add(llvm::createExternalAAWrapperPass(&Main::aliasAnalysisHooks));
+    for (Pass* pass : optimizeAndTransformPasses) {
+      pm.add(pass);
     }
-    passManager.run(module);
+    pm.run(module);
 
 #ifdef FCD_DEBUG
-    if (verifyModule(module, &errorOutput)) {
-      // errors!
-      return false;
-    }
+    // if (llvm::verifyModule(module, &errorOutput)) {
+    //   // errors!
+    //   return false;
+    // }
 #endif
     return true;
   }
@@ -457,33 +457,33 @@ class Main {
     // Default passes
     vector<string> passNames = {
         "globaldce",
-        "fixindirects",
-        "argrec",
-        "sroa",
-        "intnarrowing",
-        "signext",
-        "instcombine",
-        "intops",
-        "simplifyconditions",
-        // <-- custom passes go here with the default pass pipeline
-        "instcombine",
-        "gvn",
-        "simplifycfg",
-        "instcombine",
-        "gvn",
-        "recoverstackframe",
-        "dse",
-        "sccp",
-        "simplifycfg",
-        "eliminatecasts",
-        "instcombine",
-        "memssadle",
-        "dse",
-        "instcombine",
-        "sroa",
-        "instcombine",
-        "globaldce",
-        "simplifycfg",
+        "fixindirects", // fcd
+        "argrec", // fcd
+        // "sroa",
+        // "intnarrowing", // fcd
+        // "signext", // fcd
+        // "instcombine",
+        // "intops", // fcd
+        // "simplifyconditions", // fcd
+        // // <-- custom passes go here with the default pass pipeline
+        // "instcombine",
+        // "gvn",
+        // "simplifycfg",
+        // "instcombine",
+        // "gvn",
+        // "recoverstackframe", // fcd
+        // "dse",
+        // "sccp",
+        // "simplifycfg",
+        // "eliminatecasts", // fcd
+        // "instcombine",
+        // "memssadle", // fcd
+        // "dse",
+        // "instcombine",
+        // "sroa",
+        // "instcombine",
+        // "globaldce",
+        // "simplifycfg",
     };
 
     if (FLAGS_pipeline == "default") {

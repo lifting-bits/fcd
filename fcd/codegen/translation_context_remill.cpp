@@ -34,6 +34,8 @@
 #include "remill/BC/Util.h"
 
 #include "fcd/codegen/translation_context_remill.h"
+#include "fcd/pass_argrec_remill.h"
+#include "fcd/pass_asaa.h"
 
 namespace fcd {
 namespace {
@@ -375,13 +377,6 @@ llvm::Function *RemillTranslationContext::DefineFunction(uint64_t addr) {
     return func;
   }
 
-  llvm::legacy::FunctionPassManager func_pass_manager(module.get());
-  func_pass_manager.add(llvm::createPromoteMemoryToRegisterPass());
-  func_pass_manager.add(llvm::createReassociatePass());
-  func_pass_manager.add(llvm::createDeadStoreEliminationPass());
-  func_pass_manager.add(llvm::createDeadCodeEliminationPass());
-  func_pass_manager.doInitialization();
-
   remill::CloneBlockFunctionInto(func);
 
   func->removeFnAttr(llvm::Attribute::AlwaysInline);
@@ -403,8 +398,6 @@ llvm::Function *RemillTranslationContext::DefineFunction(uint64_t addr) {
   auto pc_val = llvm::ConstantInt::get(pc_arg->getType(), addr);
   pc_arg->replaceAllUsesWith(pc_val);
 
-  func_pass_manager.run(*func);
-  func_pass_manager.doFinalization();
   return func;
 }
 
@@ -561,15 +554,29 @@ const StubInfo *RemillTranslationContext::GetStubInfo(
 }
 
 void RemillTranslationContext::FinalizeModule() {
+  auto AACallBack = [](llvm::Pass &p, llvm::Function &f, llvm::AAResults &r) {
+    if (auto asaa = p.getAnalysisIfAvailable<AddressSpaceAAWrapperPass>())
+      r.addAAResult(asaa->getResult());
+  };
+
   llvm::legacy::PassManager module_pass_manager;
-  // module_pass_manager.add(llvm::createVerifierPass());
-  // module_pass_manager.add(llvm::createCFGSimplificationPass());
+  module_pass_manager.add(llvm::createExternalAAWrapperPass(AACallBack));
   module_pass_manager.add(llvm::createAlwaysInlinerLegacyPass());
-  // module_pass_manager.add(llvm::createExternalAAWrapperPass(&Main::aliasAnalysisHooks));
+
+  module_pass_manager.add(createRemillArgumentRecoveryPass());
+  // module_pass_manager.add(llvm::createVerifierPass());
+  // module_pass_manager.add(llvm::createDeadArgEliminationPass());
+
+  module_pass_manager.add(llvm::createPromoteMemoryToRegisterPass());
+  module_pass_manager.add(llvm::createReassociatePass());
+  module_pass_manager.add(llvm::createDeadStoreEliminationPass());
+  module_pass_manager.add(llvm::createDeadCodeEliminationPass());
+  module_pass_manager.add(llvm::createCFGSimplificationPass());
+
   module_pass_manager.add(llvm::createDeadCodeEliminationPass());
   module_pass_manager.add(llvm::createInstructionCombiningPass());
-  module_pass_manager.add(llvm::createGVNPass());
   module_pass_manager.add(llvm::createDeadStoreEliminationPass());
+  module_pass_manager.add(llvm::createGVNPass());
   module_pass_manager.add(llvm::createInstructionCombiningPass());
   module_pass_manager.add(llvm::createGlobalDCEPass());
 

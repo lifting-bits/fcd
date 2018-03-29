@@ -18,7 +18,7 @@
 #include "pass_argrec.h"
 #include "pass_backend.h"
 #include "pass_executable.h"
-#include "pass_regaa.h"
+#include "pass_asaa.h"
 #include "targetinfo.h"
 
 llvm::FunctionPass*		createRegisterPointerPromotionPass();
