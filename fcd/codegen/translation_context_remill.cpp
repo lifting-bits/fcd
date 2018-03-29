@@ -36,6 +36,7 @@
 #include "fcd/codegen/translation_context_remill.h"
 #include "fcd/pass_argrec_remill.h"
 #include "fcd/pass_asaa.h"
+#include "fcd/pass_stackrec_remill.h"
 
 namespace fcd {
 namespace {
@@ -564,29 +565,23 @@ void RemillTranslationContext::FinalizeModule() {
   module_pass_manager.add(llvm::createAlwaysInlinerLegacyPass());
 
   module_pass_manager.add(createRemillArgumentRecoveryPass());
-  // module_pass_manager.add(llvm::createVerifierPass());
-  // module_pass_manager.add(llvm::createDeadArgEliminationPass());
 
   module_pass_manager.add(llvm::createPromoteMemoryToRegisterPass());
   module_pass_manager.add(llvm::createReassociatePass());
-  module_pass_manager.add(llvm::createDeadStoreEliminationPass());
   module_pass_manager.add(llvm::createDeadCodeEliminationPass());
   module_pass_manager.add(llvm::createCFGSimplificationPass());
 
-  module_pass_manager.add(llvm::createDeadCodeEliminationPass());
-  module_pass_manager.add(llvm::createInstructionCombiningPass());
-  module_pass_manager.add(llvm::createDeadStoreEliminationPass());
+  module_pass_manager.add(llvm::createSROAPass());
   module_pass_manager.add(llvm::createGVNPass());
-  module_pass_manager.add(llvm::createInstructionCombiningPass());
   module_pass_manager.add(llvm::createGlobalDCEPass());
+  // module_pass_manager.add(llvm::createVerifierPass());
 
   auto isels = FindISELs(module.get());
   RemoveIntrinsics(module.get());
   PrivatizeISELs(isels);
   module_pass_manager.run(*module);
-
+  
   RemoveIntrinsics(module.get());
-
   // Lower memory intrinsics into loads and stores
   // Runtime memory address space is 0
   // Program memory address space is given by pmem_addr_space
@@ -597,6 +592,17 @@ void RemillTranslationContext::FinalizeModule() {
   ReplaceBarrier(module.get(), "__remill_barrier_store_store");
   ReplaceBarrier(module.get(), "__remill_barrier_atomic_begin");
   ReplaceBarrier(module.get(), "__remill_barrier_atomic_end");
+
+  llvm::legacy::PassManager pm2;
+  pm2.add(llvm::createInstructionCombiningPass());
+  pm2.add(createRemillStackRecoveryPass());
+  // pm2.add(llvm::createPromoteMemoryToRegisterPass());
+  // pm2.add(llvm::createReassociatePass());
+  pm2.add(llvm::createDeadStoreEliminationPass());
+  pm2.add(llvm::createDeadCodeEliminationPass());
+  // pm2.add(llvm::createInstructionCombiningPass());
+  // pm2.add(llvm::createVerifierPass());
+  pm2.run(*module);
 
   // Attempt to annotate remaining functions as stubs
   for (auto &func : *module) {

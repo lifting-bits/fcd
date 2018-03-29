@@ -222,7 +222,7 @@ static llvm::Function *DeclareParametrizedFunc(llvm::Function *func,
   // since it's used to access parameters passed by stack. Also add aliases.
   auto cc_regs = cc.ParamRegs();
   auto ilist = llvm::instructions(func);
-  cc_regs.push_back(cc.StackPointerVarName());
+  cc_regs.insert(cc_regs.begin(), cc.StackPointerVarName());
   for (auto reg : cc_regs) {
     auto user = FirstUserOfReg(func, reg, ilist);
     if (user.first != nullptr) {
@@ -327,7 +327,6 @@ bool RemillArgumentRecovery::runOnModule(llvm::Module &module) {
   std::vector<llvm::Function *> new_funcs;
   for (auto &func : module) {
     if (IsLiftedFunction(&func)) {
-      // func.dump();
       auto cc_func = DeclareParametrizedFunc(&func, cc);
 
       ConvertRemillArgsToLocals(&func);
