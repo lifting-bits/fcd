@@ -61,6 +61,7 @@ static void PrivatizeISELs(std::vector<llvm::GlobalVariable *> &isels) {
   }
 }
 
+// Stolen from mcsema
 static void RemoveFunction(llvm::Function *func) {
   if (!func->hasNUsesOrMore(1)) {
     func->eraseFromParent();
@@ -120,6 +121,7 @@ static void RemoveIntrinsics(llvm::Module *module) {
 }
 
 // Lower a memory read intrinsic into a `load` instruction.
+// Stolen from mcsema
 static void ReplaceMemReadOp(llvm::Module *module, const char *name,
                              llvm::Type *val_type, unsigned addr_space) {
   auto func = module->getFunction(name);
@@ -159,6 +161,7 @@ static void ReplaceMemReadOp(llvm::Module *module, const char *name,
 }
 
 // Lower a memory write intrinsic into a `store` instruction.
+// Stolen from mcsema
 static void ReplaceMemWriteOp(llvm::Module *module, const char *name,
                               llvm::Type *val_type, unsigned addr_space) {
   auto func = module->getFunction(name);
@@ -201,6 +204,25 @@ static void ReplaceMemWriteOp(llvm::Module *module, const char *name,
   RemoveFunction(func);
 }
 
+// Stolen from mcsema
+static void ReplaceBarrier(llvm::Module *module, const char *name) {
+  auto func = module->getFunction(name);
+  if (!func) {
+    return;
+  }
+
+  CHECK(func->isDeclaration())
+      << "Cannot lower already implemented memory intrinsic " << name;
+
+  auto callers = remill::CallersOf(func);
+  for (auto call_inst : callers) {
+    auto mem_ptr = call_inst->getArgOperand(0);
+    call_inst->replaceAllUsesWith(mem_ptr);
+    call_inst->eraseFromParent();
+  }
+}
+
+// Stolen from mcsema
 static void LowerMemOps(llvm::Module *module, unsigned addr_space) {
   auto &ctx = module->getContext();
 
@@ -325,8 +347,8 @@ std::unordered_set<uint64_t> RemillTranslationContext::DecodeFunction(
       continue;
     }
     auto &inst = GetOrDecodeInst(addr);
+    result.insert(inst.pc);
     if (inst.IsValid()) {
-      result.insert(inst.pc);
       switch (inst.category) {
         case remill::Instruction::kCategoryConditionalBranch:
           insts_to_decode.push(inst.branch_not_taken_pc);
@@ -491,32 +513,31 @@ const StubInfo *RemillTranslationContext::GetStubInfo(
   if (func->isDeclaration()) {
     return nullptr;
   }
-
-  llvm::Value *read = nullptr;
+  llvm::Value *jump_target = nullptr;
 
   auto& entry = func->getEntryBlock();
   if (entry.size() > 1) {
     if (auto term = llvm::dyn_cast<llvm::ReturnInst>(entry.getTerminator())) {
       if (auto jump = llvm::dyn_cast<llvm::CallInst>(term->getPrevNode())) {
         if (jump->getCalledFunction() == intrinsics->jump) {
-          read = jump->getArgOperand(1);
+          jump_target = jump->getArgOperand(1);
         }
       }
     }
   }
 
-  if (!read) {
+  if (!jump_target) {
     return nullptr;
   }
 
   llvm::ConstantInt *addr = nullptr;
-  if (auto call = llvm::dyn_cast<llvm::CallInst>(read)) {
+  if (auto call = llvm::dyn_cast<llvm::CallInst>(jump_target)) {
     if (call->getCalledFunction() == intrinsics->read_memory_64) {
       addr = llvm::dyn_cast<llvm::ConstantInt>(call->getArgOperand(1));
     }
   }
 
-  if (auto load = llvm::dyn_cast<llvm::LoadInst>(read)) {
+  if (auto load = llvm::dyn_cast<llvm::LoadInst>(jump_target)) {
     if (load->getPointerAddressSpace() == pmem_addr_space) {
       auto read_op = load->getPointerOperand();
       if (auto const_expr = llvm::dyn_cast<llvm::ConstantExpr>(read_op)) {
@@ -571,6 +592,13 @@ void RemillTranslationContext::FinalizeModule() {
   // Runtime memory address space is 0
   // Program memory address space is given by pmem_addr_space
   LowerMemOps(module.get(), pmem_addr_space);
+  
+  ReplaceBarrier(module.get(), "__remill_barrier_load_load");
+  ReplaceBarrier(module.get(), "__remill_barrier_load_store");
+  ReplaceBarrier(module.get(), "__remill_barrier_store_load");
+  ReplaceBarrier(module.get(), "__remill_barrier_store_store");
+  ReplaceBarrier(module.get(), "__remill_barrier_atomic_begin");
+  ReplaceBarrier(module.get(), "__remill_barrier_atomic_end");
 
   // Attempt to annotate remaining functions as stubs
   for (auto &func : *module) {
