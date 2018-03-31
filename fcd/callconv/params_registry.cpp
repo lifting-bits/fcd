@@ -405,7 +405,7 @@ bool ParameterRegistry::doInitialization(Module& m)
 
 bool ParameterRegistry::runOnModule(Module& m)
 {
-	aaHack.reset(new ProgramMemoryAAResult);
+	aaHack.reset(new fcd::AddressSpaceAAResult);
 	setupCCChain();
 	
 	aaResults.reset(new ParameterRegistryAAResults(TargetInfo::getTargetInfo(m)));

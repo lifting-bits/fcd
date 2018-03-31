@@ -34,6 +34,8 @@
 #include "remill/BC/Util.h"
 
 #include "fcd/codegen/translation_context_remill.h"
+#include "fcd/pass_argrec_remill.h"
+#include "fcd/pass_asaa.h"
 
 namespace fcd {
 namespace {
@@ -375,13 +377,6 @@ llvm::Function *RemillTranslationContext::DefineFunction(uint64_t addr) {
     return func;
   }
 
-  llvm::legacy::FunctionPassManager func_pass_manager(module.get());
-  func_pass_manager.add(llvm::createPromoteMemoryToRegisterPass());
-  func_pass_manager.add(llvm::createReassociatePass());
-  func_pass_manager.add(llvm::createDeadStoreEliminationPass());
-  func_pass_manager.add(llvm::createDeadCodeEliminationPass());
-  func_pass_manager.doInitialization();
-
   remill::CloneBlockFunctionInto(func);
 
   func->removeFnAttr(llvm::Attribute::AlwaysInline);
@@ -403,8 +398,6 @@ llvm::Function *RemillTranslationContext::DefineFunction(uint64_t addr) {
   auto pc_val = llvm::ConstantInt::get(pc_arg->getType(), addr);
   pc_arg->replaceAllUsesWith(pc_val);
 
-  func_pass_manager.run(*func);
-  func_pass_manager.doFinalization();
   return func;
 }
 
@@ -520,14 +513,15 @@ const StubInfo *RemillTranslationContext::GetStubInfo(
   if (func->isDeclaration()) {
     return nullptr;
   }
-
   llvm::Value *jump_target = nullptr;
 
-  auto term = func->getEntryBlock().getTerminator();
-  if (llvm::isa<llvm::ReturnInst>(term)) {
-    if (auto jump = llvm::dyn_cast<llvm::CallInst>(term->getPrevNode())) {
-      if (jump->getCalledFunction() == intrinsics->jump) {
-        jump_target = jump->getArgOperand(1);
+  auto& entry = func->getEntryBlock();
+  if (entry.size() > 1) {
+    if (auto term = llvm::dyn_cast<llvm::ReturnInst>(entry.getTerminator())) {
+      if (auto jump = llvm::dyn_cast<llvm::CallInst>(term->getPrevNode())) {
+        if (jump->getCalledFunction() == intrinsics->jump) {
+          jump_target = jump->getArgOperand(1);
+        }
       }
     }
   }
@@ -561,15 +555,29 @@ const StubInfo *RemillTranslationContext::GetStubInfo(
 }
 
 void RemillTranslationContext::FinalizeModule() {
+  auto AACallBack = [](llvm::Pass &p, llvm::Function &f, llvm::AAResults &r) {
+    if (auto asaa = p.getAnalysisIfAvailable<AddressSpaceAAWrapperPass>())
+      r.addAAResult(asaa->getResult());
+  };
+
   llvm::legacy::PassManager module_pass_manager;
-  // module_pass_manager.add(llvm::createVerifierPass());
-  // module_pass_manager.add(llvm::createCFGSimplificationPass());
+  module_pass_manager.add(llvm::createExternalAAWrapperPass(AACallBack));
   module_pass_manager.add(llvm::createAlwaysInlinerLegacyPass());
-  // module_pass_manager.add(llvm::createExternalAAWrapperPass(&Main::aliasAnalysisHooks));
+
+  module_pass_manager.add(createRemillArgumentRecoveryPass());
+  // module_pass_manager.add(llvm::createVerifierPass());
+  // module_pass_manager.add(llvm::createDeadArgEliminationPass());
+
+  module_pass_manager.add(llvm::createPromoteMemoryToRegisterPass());
+  module_pass_manager.add(llvm::createReassociatePass());
+  module_pass_manager.add(llvm::createDeadStoreEliminationPass());
+  module_pass_manager.add(llvm::createDeadCodeEliminationPass());
+  module_pass_manager.add(llvm::createCFGSimplificationPass());
+
   module_pass_manager.add(llvm::createDeadCodeEliminationPass());
   module_pass_manager.add(llvm::createInstructionCombiningPass());
-  module_pass_manager.add(llvm::createGVNPass());
   module_pass_manager.add(llvm::createDeadStoreEliminationPass());
+  module_pass_manager.add(llvm::createGVNPass());
   module_pass_manager.add(llvm::createInstructionCombiningPass());
   module_pass_manager.add(llvm::createGlobalDCEPass());
 
@@ -584,6 +592,7 @@ void RemillTranslationContext::FinalizeModule() {
   // Runtime memory address space is 0
   // Program memory address space is given by pmem_addr_space
   LowerMemOps(module.get(), pmem_addr_space);
+  
   ReplaceBarrier(module.get(), "__remill_barrier_load_load");
   ReplaceBarrier(module.get(), "__remill_barrier_load_store");
   ReplaceBarrier(module.get(), "__remill_barrier_store_load");

@@ -11,7 +11,7 @@
 #define fcd__callconv_params_registry_h
 
 #include "targetinfo.h"
-#include "pass_regaa.h"
+#include "pass_asaa.h"
 
 #include <llvm/ADT/iterator_range.h>
 #include <llvm/ADT/SmallVector.h>
@@ -218,7 +218,7 @@ class ParameterRegistry final : public llvm::ModulePass
 {
 	std::unique_ptr<ParameterRegistryAAResults> aaResults;
 	std::unique_ptr<TargetInfo> targetInfo;
-	std::unique_ptr<ProgramMemoryAAResult> aaHack;
+	std::unique_ptr<fcd::AddressSpaceAAResult> aaHack;
 	std::deque<CallingConvention*> ccChain;
 	std::unordered_map<const llvm::Function*, std::pair<unsigned, std::unique_ptr<llvm::MemorySSA>>> mssas;
 	bool analyzing;
