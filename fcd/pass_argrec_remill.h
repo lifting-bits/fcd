@@ -31,13 +31,13 @@ class RemillArgumentRecovery : public llvm::ModulePass {
  public:
   static char ID;
 
-  RemillArgumentRecovery();
+  RemillArgumentRecovery(void);
 
   void getAnalysisUsage(llvm::AnalysisUsage& usage) const override;
   bool runOnModule(llvm::Module& module) override;
 };
 
-llvm::ModulePass* createRemillArgumentRecoveryPass();
+llvm::ModulePass* createRemillArgumentRecoveryPass(void);
 }  // namespace fcd
 
 namespace llvm {

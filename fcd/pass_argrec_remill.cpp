@@ -308,7 +308,7 @@ static bool IsLiftedFunction(llvm::Function *func) {
 
 char RemillArgumentRecovery::ID = 0;
 
-RemillArgumentRecovery::RemillArgumentRecovery()
+RemillArgumentRecovery::RemillArgumentRecovery(void)
     : ModulePass(RemillArgumentRecovery::ID),
       cc(CallingConvention(remill::GetTargetArch()->DefaultCallingConv())) {
   sPrefix = cPrefix;
@@ -321,15 +321,30 @@ bool RemillArgumentRecovery::runOnModule(llvm::Module &module) {
   std::vector<llvm::Function *> new_funcs;
   for (auto &func : module) {
     if (IsLiftedFunction(&func)) {
+      // Recover the argument and return types of `func` by
+      // analyzing it's body and looking for the usage of
+      // registers that are declared by `cc` as parameter
+      // and return registers. Then declare a new function
+      // with the recovered argument and return types.
       auto cc_func = DeclareParametrizedFunc(&func, cc);
-
+      
+      // Converts remill's `State`, `pc` and `Memory` args
+      // to local variables so that they make room for
+      // recovered register arguments.
       ConvertRemillArgsToLocals(&func);
-
+      
+      // Clone the old function to the newly created one
       remill::ValueMap val_map;
       remill::CloneFunctionInto(&func, cc_func, val_map);
 
+      // Create local variables for every argument in 
+      // `cc_func` and store parameter values to them.
       StoreRegArgsToLocals(cc_func);
 
+      // Creates parametrized `ret` instructions based on
+      // the function's return type and loads a value
+      // from a return register for that type. The calling
+      // convention defines which return register to use.
       LoadReturnRegToRetInsts(cc_func, cc);
 
       new_funcs.push_back(cc_func);
@@ -337,6 +352,9 @@ bool RemillArgumentRecovery::runOnModule(llvm::Module &module) {
   }
 
   for (auto func : new_funcs) {
+    // Replace all uses of the old function with the new
+    // one with the recovered parameter and return types.
+    // Then delete the old function from the module.
     auto name = TrimPrefix(func->getName());
     auto old_func = remill::FindFunction(&module, name);
     UpdateCalls(old_func, func, cc);
@@ -354,7 +372,7 @@ bool RemillArgumentRecovery::runOnModule(llvm::Module &module) {
   return true;
 }
 
-llvm::ModulePass *createRemillArgumentRecoveryPass() {
+llvm::ModulePass *createRemillArgumentRecoveryPass(void) {
   return new RemillArgumentRecovery;
 }
 

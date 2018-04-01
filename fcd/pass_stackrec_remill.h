@@ -33,13 +33,13 @@ class RemillStackRecovery : public llvm::ModulePass {
  public:
   static char ID;
 
-  RemillStackRecovery();
+  RemillStackRecovery(void);
 
   void getAnalysisUsage(llvm::AnalysisUsage &usage) const override;
   bool runOnModule(llvm::Module &module) override;
 };
 
-llvm::ModulePass *createRemillStackRecoveryPass();
+llvm::ModulePass *createRemillStackRecoveryPass(void);
 }  // namespace fcd
 
 namespace llvm {

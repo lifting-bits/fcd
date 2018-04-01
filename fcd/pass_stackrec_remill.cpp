@@ -303,7 +303,7 @@ static void StoreStackParamsToLocals(
 
 char RemillStackRecovery::ID = 0;
 
-RemillStackRecovery::RemillStackRecovery()
+RemillStackRecovery::RemillStackRecovery(void)
     : ModulePass(RemillStackRecovery::ID),
       cc(CallingConvention(remill::GetTargetArch()->DefaultCallingConv())) {
   sPrefix = cPrefix;
@@ -320,10 +320,19 @@ bool RemillStackRecovery::runOnModule(llvm::Module &module) {
   for (auto &func : module) {
     auto sp = GetStackPointerArg(&func);
     if (sp != nullptr && !sp->user_empty() && !func.empty()) {
+      // Find stack objects (stack variables and function parameters
+      // passed via stack) by analyzing accesses to memory addresses
+      // derived from the stack pointer. Addresses, pointer operands
+      // derived from the addresses and the types of stack objects
+      // are saved to `unordered_map`s for later use. The `int_64t`
+      // keys and values are offsets from the stack pointer.
       std::unordered_map<int64_t, llvm::BinaryOperator *> addrs;
       std::unordered_map<llvm::IntToPtrInst *, int64_t> ptrs;
       std::unordered_map<int64_t, llvm::Type *> objs;
       FindStackObjects(sp, pmem_addr_space, addrs, ptrs, objs);
+      
+      // Promotes the stack objects found in `func` to local variables
+      // using `alloca` instructions.
       PromoteStackObjsToVars(sp, addrs, ptrs, objs, vars);
 
       old_funcs.push_back(&func);
@@ -410,7 +419,7 @@ bool RemillStackRecovery::runOnModule(llvm::Module &module) {
   return true;
 }  // namespace fcd
 
-llvm::ModulePass *createRemillStackRecoveryPass() {
+llvm::ModulePass *createRemillStackRecoveryPass(void) {
   return new RemillStackRecovery;
 }
 
