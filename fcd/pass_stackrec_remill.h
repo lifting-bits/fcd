@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef FCD_PASS_ARGREC_REMILL_H_
-#define FCD_PASS_ARGREC_REMILL_H_
+#ifndef FCD_PASS_STACK_REMILL_H_
+#define FCD_PASS_STACK_REMILL_H_
 
 #include <llvm/Analysis/Passes.h>
 #include <llvm/IR/Module.h>
@@ -24,24 +24,26 @@
 
 namespace fcd {
 
-class RemillArgumentRecovery : public llvm::ModulePass {
+class RemillStackRecovery : public llvm::ModulePass {
  private:
-  const char* cPrefix = "argrec_";
+  const char *cPrefix = "stackrec_";
+  const unsigned pmem_addr_space = 1;
   CallingConvention cc;
+
  public:
   static char ID;
 
-  RemillArgumentRecovery(void);
+  RemillStackRecovery(void);
 
-  void getAnalysisUsage(llvm::AnalysisUsage& usage) const override;
-  bool runOnModule(llvm::Module& module) override;
+  void getAnalysisUsage(llvm::AnalysisUsage &usage) const override;
+  bool runOnModule(llvm::Module &module) override;
 };
 
-llvm::ModulePass* createRemillArgumentRecoveryPass(void);
+llvm::ModulePass *createRemillStackRecoveryPass(void);
 }  // namespace fcd
 
 namespace llvm {
-void initializeRemillArgumentRecoveryPass(PassRegistry&);
+void initializeRemillStackRecoveryPass(PassRegistry &);
 }
 
-#endif // FCD_PASS_ARGREC_REMILL_H_
+#endif  // FCD_PASS_STACK_REMILL_H_

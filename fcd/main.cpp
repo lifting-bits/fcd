@@ -80,8 +80,6 @@ DEFINE_string(frameworks, "",
               "Apple framework dirs to be used for declarations");
 DEFINE_string(includes, "", "Directories to search headers in");
 
-DECLARE_string(callconv);
-
 DECLARE_string(arch);
 DECLARE_string(os);
 
