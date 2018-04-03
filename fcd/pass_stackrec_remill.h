@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef FCD_PASS_STACK_REMILL_H_
-#define FCD_PASS_STACK_REMILL_H_
+#ifndef FCD_PASS_STACKREC_REMILL_H_
+#define FCD_PASS_STACKREC_REMILL_H_
 
 #include <llvm/Analysis/Passes.h>
 #include <llvm/IR/Module.h>
@@ -46,4 +46,4 @@ namespace llvm {
 void initializeRemillStackRecoveryPass(PassRegistry &);
 }
 
-#endif  // FCD_PASS_STACK_REMILL_H_
+#endif  // FCD_PASS_STACKREC_REMILL_H_
