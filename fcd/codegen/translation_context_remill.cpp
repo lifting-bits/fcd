@@ -37,6 +37,7 @@
 #include "fcd/pass_argrec_remill.h"
 #include "fcd/pass_asaa.h"
 #include "fcd/pass_stackrec_remill.h"
+#include "fcd/pass_intrinsics_remill.h"
 
 namespace fcd {
 namespace {
@@ -602,6 +603,7 @@ void RemillTranslationContext::FinalizeModule() {
   // pm2.add(llvm::createReassociatePass());
   pm2.add(llvm::createDeadStoreEliminationPass());
   pm2.add(llvm::createDeadCodeEliminationPass());
+  pm2.add(createRemillFixIntrinsicsPass());
   // pm2.add(llvm::createInstructionCombiningPass());
   // pm2.add(llvm::createVerifierPass());
   pm2.run(*module);
