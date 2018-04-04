@@ -561,52 +561,54 @@ void RemillTranslationContext::FinalizeModule() {
     if (auto asaa = p.getAnalysisIfAvailable<AddressSpaceAAWrapperPass>())
       r.addAAResult(asaa->getResult());
   };
-
-  llvm::legacy::PassManager module_pass_manager;
-  module_pass_manager.add(llvm::createExternalAAWrapperPass(AACallBack));
-  module_pass_manager.add(llvm::createAlwaysInlinerLegacyPass());
-
-  module_pass_manager.add(createRemillArgumentRecoveryPass());
-
-  module_pass_manager.add(llvm::createPromoteMemoryToRegisterPass());
-  module_pass_manager.add(llvm::createReassociatePass());
-  module_pass_manager.add(llvm::createDeadCodeEliminationPass());
-  module_pass_manager.add(llvm::createCFGSimplificationPass());
-
-  module_pass_manager.add(llvm::createSROAPass());
-  module_pass_manager.add(llvm::createGVNPass());
-  module_pass_manager.add(llvm::createGlobalDCEPass());
-  // module_pass_manager.add(llvm::createVerifierPass());
-
+  
   auto isels = FindISELs(module.get());
   RemoveIntrinsics(module.get());
   PrivatizeISELs(isels);
-  module_pass_manager.run(*module);
   
-  RemoveIntrinsics(module.get());
+  llvm::legacy::PassManager phase_one;
+  phase_one.add(llvm::createAlwaysInlinerLegacyPass());
+  phase_one.add(createRemillArgumentRecoveryPass());
+  phase_one.add(llvm::createPromoteMemoryToRegisterPass());
+  phase_one.add(llvm::createReassociatePass());
+  phase_one.add(llvm::createDeadCodeEliminationPass());
+  phase_one.add(llvm::createCFGSimplificationPass());
+  // phase_one.add(llvm::createVerifierPass());
+  phase_one.run(*module);
+  
   // Lower memory intrinsics into loads and stores
   // Runtime memory address space is 0
   // Program memory address space is given by pmem_addr_space
   LowerMemOps(module.get(), pmem_addr_space);
-  
   ReplaceBarrier(module.get(), "__remill_barrier_load_load");
   ReplaceBarrier(module.get(), "__remill_barrier_load_store");
   ReplaceBarrier(module.get(), "__remill_barrier_store_load");
   ReplaceBarrier(module.get(), "__remill_barrier_store_store");
   ReplaceBarrier(module.get(), "__remill_barrier_atomic_begin");
   ReplaceBarrier(module.get(), "__remill_barrier_atomic_end");
+  
+  llvm::legacy::PassManager phase_two;
+  phase_two.add(llvm::createExternalAAWrapperPass(AACallBack));
+  phase_two.add(createRemillFixIntrinsicsPass());
+  phase_two.add(llvm::createSROAPass());
+  phase_two.add(llvm::createGVNPass());
+  phase_two.add(llvm::createGlobalDCEPass());
+  phase_two.run(*module);
 
-  llvm::legacy::PassManager pm2;
-  pm2.add(llvm::createInstructionCombiningPass());
-  pm2.add(createRemillStackRecoveryPass());
-  // pm2.add(llvm::createPromoteMemoryToRegisterPass());
-  // pm2.add(llvm::createReassociatePass());
-  pm2.add(llvm::createDeadStoreEliminationPass());
-  pm2.add(llvm::createDeadCodeEliminationPass());
-  pm2.add(createRemillFixIntrinsicsPass());
-  // pm2.add(llvm::createInstructionCombiningPass());
-  // pm2.add(llvm::createVerifierPass());
-  pm2.run(*module);
+  RemoveIntrinsics(module.get());
+
+  llvm::legacy::PassManager phase_three;
+  phase_three.add(llvm::createExternalAAWrapperPass(AACallBack));
+  phase_three.add(llvm::createInstructionCombiningPass());
+  phase_three.add(createRemillStackRecoveryPass());
+  // phase_three.add(llvm::createPromoteMemoryToRegisterPass());
+  // phase_three.add(llvm::createReassociatePass());
+  phase_three.add(llvm::createDeadStoreEliminationPass());
+  phase_three.add(llvm::createDeadCodeEliminationPass());
+  phase_three.add(llvm::createCFGSimplificationPass());
+  // phase_three.add(llvm::createInstructionCombiningPass());
+  // phase_three.add(llvm::createVerifierPass());
+  phase_three.run(*module);
 
   // Attempt to annotate remaining functions as stubs
   for (auto &func : *module) {

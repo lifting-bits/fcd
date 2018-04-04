@@ -20,8 +20,8 @@
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/InstIterator.h>
 
-#include <map>
 #include <iostream>
+#include <map>
 #include <sstream>
 #include <unordered_map>
 #include <vector>
@@ -35,6 +35,27 @@ namespace fcd {
 namespace {
 
 static const char *sPrefix;
+static llvm::Module *sModule;
+
+static std::string TrimPrefix(std::string pref, std::string str) {
+  auto ref = llvm::StringRef(str);
+  ref.consume_front(pref);
+  return ref.str();
+}
+
+static bool IsRemillIntrinsicWithUse(llvm::Function *func) {
+  if (func->getName().startswith("__remill")) {
+    if (func->isDeclaration()) {
+      return func->hasNUsesOrMore(1);
+    }
+  }
+  return false;
+}
+
+static bool IsRemillLiftingArgType(llvm::Type *type) {
+  return type == remill::StatePointerType(sModule) ||
+         type == remill::MemoryPointerType(sModule);
+}
 
 }  // namespace
 
@@ -48,6 +69,65 @@ RemillFixIntrinsics::RemillFixIntrinsics(void)
 void RemillFixIntrinsics::getAnalysisUsage(llvm::AnalysisUsage &usage) const {}
 
 bool RemillFixIntrinsics::runOnModule(llvm::Module &module) {
+  sModule = &module;
+  std::unordered_map<llvm::Function *, llvm::Function *> funcs;
+  for (auto &func : module) {
+    if (IsRemillIntrinsicWithUse(&func)) {
+      // std::cerr << "RemillFixIntrinsics: " << func.getName().str() <<
+      // std::endl;
+
+      std::vector<llvm::Type *> arg_types;
+      for (auto &arg : func.args()) {
+        auto arg_type = arg.getType();
+        if (!IsRemillLiftingArgType(arg_type)) {
+          arg_types.push_back(arg_type);
+        }
+      }
+
+      auto ret_type = func.getReturnType();
+      if (IsRemillLiftingArgType(ret_type)) {
+        ret_type = llvm::Type::getVoidTy(module.getContext());
+      }
+
+      auto func_type = llvm::FunctionType::get(ret_type, arg_types, false);
+
+      std::stringstream ss;
+      ss << "__fcd" << TrimPrefix("__remill", func.getName().str());
+      auto new_func = llvm::dyn_cast<llvm::Function>(
+          module.getOrInsertFunction(ss.str(), func_type));
+
+      CHECK(new_func != nullptr);
+
+      funcs[&func] = new_func;
+    }
+  }
+
+  llvm::IRBuilder<> ir(module.getContext());
+  for (auto item : funcs) {
+    auto old_func = item.first;
+    auto new_func = item.second;
+    for (auto call : remill::CallersOf(old_func)) {
+      std::vector<llvm::Value *> params;
+      for (auto &arg : call->arg_operands()) {
+        auto arg_type = arg->getType();
+        if (!IsRemillLiftingArgType(arg_type)) {
+          params.push_back(arg);
+        }
+      }
+      ir.SetInsertPoint(call);
+      auto new_call = ir.CreateCall(new_func, params);
+      auto memptrty = remill::MemoryPointerType(&module);
+      if (call->getType() == memptrty) {
+        call->replaceAllUsesWith(llvm::UndefValue::get(memptrty));
+      } else {
+        call->replaceAllUsesWith(new_call);
+      }
+      call->eraseFromParent();
+    }
+    old_func->replaceAllUsesWith(llvm::UndefValue::get(old_func->getType()));
+    old_func->eraseFromParent();
+  }
+  // module.dump();
   return true;
 }
 
@@ -60,7 +140,7 @@ static llvm::RegisterPass<RemillFixIntrinsics> remill_stackrec(
 
 }  // namespace fcd
 
-using namespace llvm;
-using RemillFixIntrinsics = fcd::RemillFixIntrinsics;
-INITIALIZE_PASS(RemillFixIntrinsics, "remill_intrinsics",
-                "Remill's Intrinsics Cleanup", true, false)
+// using namespace llvm;
+// using RemillFixIntrinsics = fcd::RemillFixIntrinsics;
+// INITIALIZE_PASS(RemillFixIntrinsics, "remill_intrinsics",
+//                 "Remill's Intrinsics Cleanup", true, false)
