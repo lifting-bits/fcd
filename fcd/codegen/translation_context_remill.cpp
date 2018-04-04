@@ -515,14 +515,17 @@ const StubInfo *RemillTranslationContext::GetStubInfo(
   if (func->isDeclaration()) {
     return nullptr;
   }
-  llvm::Value *jump_target = nullptr;
 
+  auto jump_intrinsic = remill::FindFunction(func->getParent(), "__fcd_jump");
+  CHECK(jump_intrinsic != nullptr);
+
+  llvm::Value *jump_target = nullptr;
   auto &entry = func->getEntryBlock();
   if (entry.size() > 1) {
     if (auto term = llvm::dyn_cast<llvm::ReturnInst>(entry.getTerminator())) {
       if (auto jump = llvm::dyn_cast<llvm::CallInst>(term->getPrevNode())) {
-        if (jump->getCalledFunction() == intrinsics->jump) {
-          jump_target = jump->getArgOperand(1);
+        if (jump->getCalledFunction() == jump_intrinsic) {
+          jump_target = jump->getArgOperand(0);
         }
       }
     }
@@ -593,6 +596,7 @@ void RemillTranslationContext::FinalizeModule() {
   phase_two.add(llvm::createSROAPass());
   phase_two.add(llvm::createGVNPass());
   phase_two.add(llvm::createGlobalDCEPass());
+  // phase_two.add(llvm::createVerifierPass());
   phase_two.run(*module);
 
   RemoveIntrinsics(module.get());
