@@ -23,9 +23,6 @@
 namespace fcd {
 
 class RemillFixIntrinsics: public llvm::ModulePass {
- private:
-  const char *cPrefix = "__fcd";
-
  public:
   static char ID;
 

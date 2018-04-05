@@ -31,7 +31,6 @@ namespace fcd {
 
 namespace {
 
-static const char *sPrefix;
 static llvm::Module *sModule;
 
 static std::string TrimPrefix(std::string pref, std::string str) {
@@ -60,7 +59,6 @@ char RemillFixIntrinsics::ID = 0;
 
 RemillFixIntrinsics::RemillFixIntrinsics(void)
     : ModulePass(RemillFixIntrinsics::ID) {
-  sPrefix = cPrefix;
 }
 
 void RemillFixIntrinsics::getAnalysisUsage(llvm::AnalysisUsage &usage) const {}
@@ -139,7 +137,7 @@ llvm::ModulePass *createRemillFixIntrinsicsPass(void) {
   return new RemillFixIntrinsics;
 }
 
-static llvm::RegisterPass<RemillFixIntrinsics> remill_stackrec(
+static llvm::RegisterPass<RemillFixIntrinsics> remill_intrinsics(
     "remill_intrinsics", "Remill's Intrinsics Cleanup", true, false);
 
 }  // namespace fcd
