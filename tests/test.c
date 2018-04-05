@@ -1,3 +1,4 @@
+// gcc -o test.out test.c
 #include <stdio.h>
 
 unsigned a = 0;

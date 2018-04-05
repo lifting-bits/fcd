@@ -7,18 +7,6 @@
 // license. See LICENSE.md for details.
 //
 
-#include "main.h"
-#include "ast_passes.h"
-#include "command_line.h"
-#include "errors.h"
-#include "executable.h"
-#include "header_decls.h"
-#include "metadata.h"
-#include "params_registry.h"
-#include "passes.h"
-#include "python_context.h"
-#include "translation_context.h"
-
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -47,12 +35,23 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <map>
+#include <list>
 #include <memory>
 #include <sstream>
 #include <string>
-#include <unordered_map>
 #include <vector>
+
+#include "fcd/ast/ast_passes.h"
+#include "fcd/callconv/params_registry.h"
+#include "fcd/codegen/translation_context_remill.h"
+#include "fcd/command_line.h"
+#include "fcd/errors.h"
+#include "fcd/executables/executable.h"
+#include "fcd/header_decls.h"
+#include "fcd/main.h"
+#include "fcd/metadata.h"
+#include "fcd/passes.h"
+#include "fcd/python/python_context.h"
 
 #ifdef FCD_DEBUG
 [[gnu::used]] llvm::raw_ostream& llvm_errs() { return llvm::errs(); }
@@ -63,8 +62,10 @@ DEFINE_bool(partial, false,
 DEFINE_bool(exclusive, false, "More restrictive version of -partial");
 DEFINE_bool(module_in, false, "Input file is a LLVM module");
 DEFINE_bool(module_out, false, "Output LLVM module");
-DEFINE_bool(optimize, true, "Optimize ");
-DEFINE_string(other_entry, "", "Add entry points from virtual addresses");
+DEFINE_bool(optimize, true, "Optimize lifted LLVM module");
+DEFINE_string(
+    other_entry, "",
+    "Add entry points from virtual addresses; Requires hexadecimal format");
 DEFINE_string(opt, "",
               "Insert LLVM IR passes; Allows passes from LLVM's opt or .py "
               "files; Requires default pass pipeline");
@@ -86,7 +87,7 @@ std::vector<T> parseListFlag(std::string flag, char sep) {
   std::string s;
   while (getline(f, s, sep)) {
     T tmp;
-    std::istringstream(s) >> tmp;
+    std::istringstream(s) >> std::hex >> tmp >> std::dec;
     res.push_back(tmp);
   }
   return res;
@@ -97,84 +98,7 @@ auto headers = parseListFlag<std::string>(FLAGS_headers, ',');
 auto frameworks = parseListFlag<std::string>(FLAGS_frameworks, ',');
 auto customPassPipeline = parseListFlag<std::string>(FLAGS_pipeline, ',');
 auto additionalPasses = parseListFlag<std::string>(FLAGS_opt, ',');
-auto additionalEntryPoints = parseListFlag<unsigned long long>(FLAGS_other_entry, ',');
-
-// cl::opt<std::string> inputFile(cl::Positional, cl::desc("<input program>"),
-//                           cl::Required, whitelist());
-// cl::list<unsigned long long> additionalEntryPoints(
-//     "other-entry",
-//     cl::desc(
-//         "Add entry point from virtual address (can be used multiple times)"),
-//     cl::CommaSeparated, whitelist());
-// cl::list<bool> partialDisassembly(
-//     "partial",
-//     cl::desc("Only decompile functions specified with --other-entry"),
-//     whitelist());
-// cl::list<bool> inputIsModule("module-in",
-//                              cl::desc("Input file is a LLVM module"),
-//                              whitelist());
-// cl::list<bool> outputIsModule("module-out", cl::desc("Output LLVM module"),
-//                               whitelist());
-
-// cl::list<std::string> additionalPasses(
-//     "opt",
-//     cl::desc("Insert LLVM optimization pass; a pass name ending in .py is "
-//              "interpreted as a Python script. Requires default pass
-//              pipeline."),
-//     whitelist());
-// cl::opt<std::string> customPassPipeline(
-//     "opt-pipeline", cl::desc("Customize pass pipeline. Empty string lets you
-//     "
-//                              "order passes through $EDITOR; otherwise, must
-//                              be "
-//                              "a whitespace-separated list of passes."),
-//     cl::init("default"), whitelist());
-// cl::list<std::string> headers(
-//     "header", cl::desc("Path of a header file to parse for function "
-//                        "declarations. Can be specified multiple times"),
-//     whitelist());
-// cl::list<std::string> frameworks(
-//     "framework", cl::desc("Path of an Apple framework that fcd should use for
-//     "
-//                           "declarations. Can be specified multiple times"),
-//     whitelist());
-// cl::list<std::string> headerSearchPath(
-//     "I", cl::desc("Additional directory to search headers in. Can be
-//     specified "
-//                   "multiple times"),
-//     whitelist());
-
-// template <int (*)()>  // templated to ensure multiple instatiation of the
-// static
-//                       // variables
-//                       inline int optCount(const cl::list<bool>& list) {
-//   static int count = 0;
-//   static bool counted = false;
-//   if (!counted) {
-//     for (bool opt : list) {
-//       count += opt ? 1 : -1;
-//     }
-//     counted = true;
-//   }
-//   return count;
-// }
-
-// inline int partialOptCount() {
-//   return optCount<partialOptCount>(partialDisassembly);
-// }
-
-// inline int moduleInCount() { return optCount<moduleInCount>(inputIsModule); }
-
-// inline int moduleOutCount() { return
-// optCount<moduleOutCount>(outputIsModule); }
-
-// void pruneOptionList(StringMap<cl::Option*>& list) {
-//   for (auto& pair : list) {
-//     if (!whitelist::isWhitelisted(*pair.second)) {
-//       pair.second->setHiddenFlag(cl::ReallyHidden);
-//     }
-//   }
-// }
+auto additionalEntryPoints = parseListFlag<uint64_t>(FLAGS_other_entry, ',');
 
 template <typename T>
 std::string errorOf(const llvm::ErrorOr<T>& error) {
@@ -207,22 +131,6 @@ size_t forEachCall(llvm::Function* callee, unsigned stringArgumentIndex,
   return count;
 }
 
-bool refillEntryPoints(const TranslationContext& transl,
-                       const EntryPointRepository& entryPoints,
-                       std::map<uint64_t, SymbolInfo>& toVisit,
-                       size_t iterations) {
-  if (isExclusiveDisassembly() || (isPartialDisassembly() && iterations > 1)) {
-    return false;
-  }
-
-  for (uint64_t entryPoint : transl.getDiscoveredEntryPoints()) {
-    if (auto symbolInfo = entryPoints.getInfo(entryPoint)) {
-      toVisit.insert({entryPoint, *symbolInfo});
-    }
-  }
-  return !toVisit.empty();
-}
-
 class Main {
   int argc;
   char** argv;
@@ -234,28 +142,18 @@ class Main {
   static void aliasAnalysisHooks(llvm::Pass& pass, llvm::Function& fn,
                                  llvm::AAResults& aar) {
     if (auto prgmem =
-            pass.getAnalysisIfAvailable<ProgramMemoryAAWrapperPass>()) {
+            pass.getAnalysisIfAvailable<fcd::AddressSpaceAAWrapperPass>()) {
       aar.addAAResult(prgmem->getResult());
     }
     if (auto params = pass.getAnalysisIfAvailable<ParameterRegistry>()) {
       aar.addAAResult(params->getAAResult());
     }
   }
-
-  static llvm::legacy::PassManager createBasePassManager() {
-    llvm::legacy::PassManager pm;
-    pm.add(llvm::createTypeBasedAAWrapperPass());
-    pm.add(llvm::createScopedNoAliasAAWrapperPass());
-    pm.add(llvm::createBasicAAWrapperPass());
-    pm.add(createProgramMemoryAliasAnalysis());
-    return pm;
-  }
-
   std::vector<llvm::Pass*> createPassesFromList(
       const std::vector<std::string>& passNames) {
     std::vector<llvm::Pass*> result;
     llvm::PassRegistry* pr = llvm::PassRegistry::getPassRegistry();
-    for (std::string passName : passNames) {
+    for (auto passName : passNames) {
       auto begin = passName.begin();
       while (begin != passName.end()) {
         if (isspace(*begin)) {
@@ -362,25 +260,6 @@ class Main {
     return createPassesFromList(lines);
   }
 
-  // std::vector<llvm::Pass*> readPassPipelineFromString(const std::string&
-  // argString) {
-  //   std::stringstream ss(argString, ios::in);
-  //   std::vector<std::string> passes;
-  //   while (ss) {
-  //     passes.emplace_back();
-  //     std::string& passName = passes.back();
-  //     ss >> passName;
-  //     if (passName.size() == 0 || passName[0] == '#') {
-  //       passes.pop_back();
-  //     }
-  //   }
-  //   auto result = createPassesFromList(passes);
-  //   if (result.size() == 0) {
-  //     llvm::errs() << getProgramName() << ": empty custom pass list\n";
-  //   }
-  //   return result;
-  // }
-
  public:
   Main(int argc, char** argv) : argc(argc), argv(argv), python(argv[0]) {
     (void)argc;
@@ -398,129 +277,116 @@ class Main {
     return Executable::parse(start, end);
   }
 
-  llvm::ErrorOr<std::unique_ptr<llvm::Module>> generateAnnotatedModule(
-      Executable& executable, const std::string& moduleName = "fcd-out") {
-    x86_config config64 = {x86_isa64, 8, X86_REG_RIP, X86_REG_RSP, X86_REG_RBP};
-    TranslationContext transl(llvm, executable, config64, moduleName);
-
+  std::unique_ptr<llvm::Module> generateAnnotatedModule(
+      Executable& executable) {
+    fcd::RemillTranslationContext RTC(llvm, executable);
     // Load headers here, since this is the earliest point where we have an
     // executable and a module.
-    auto cDecls = HeaderDeclarations::create(
-        transl.get(), headerSearchPath.begin(), headerSearchPath.end(),
-        headers.begin(), headers.end(), frameworks.begin(), frameworks.end(),
-        llvm::errs());
-    if (!cDecls) {
-      return make_error_code(FcdError::Main_HeaderParsingError);
-    }
+    auto& module = RTC.GetModule();
+    auto cdecls = HeaderDeclarations::create(module, headerSearchPath, headers,
+                                             frameworks, llvm::errs());
 
-    EntryPointRepository entryPoints;
-    entryPoints.addProvider(executable);
-    entryPoints.addProvider(*cDecls);
+    CHECK(cdecls) << "Header file parsing error";
 
-    md::addIncludedFiles(transl.get(), cDecls->getIncludedFiles());
+    EntryPointRepository EPR;
+    EPR.addProvider(executable);
+    EPR.addProvider(*cdecls);
 
-    std::map<uint64_t, SymbolInfo> toVisit;
+    md::addIncludedFiles(RTC.GetModule(), cdecls->getIncludedFiles());
+
+    std::list<uint64_t> entry_points;
     if (isFullDisassembly()) {
-      for (uint64_t address : entryPoints.getVisibleEntryPoints()) {
-        auto symbolInfo = entryPoints.getInfo(address);
-        assert(symbolInfo != nullptr);
-        toVisit.insert({symbolInfo->virtualAddress, *symbolInfo});
+      for (uint64_t addr : EPR.getVisibleEntryPoints()) {
+        CHECK(EPR.getInfo(addr))
+            << "No symbol info for address " << std::hex << addr << std::dec;
+        entry_points.push_back(addr);
       }
     }
 
-    for (uint64_t address : std::unordered_set<uint64_t>(
-             additionalEntryPoints.begin(), additionalEntryPoints.end())) {
-      if (auto symbolInfo = entryPoints.getInfo(address)) {
-        toVisit.insert({symbolInfo->virtualAddress, *symbolInfo});
-      } else {
-        return make_error_code(FcdError::Main_EntryPointOutOfMappedMemory);
-      }
+    for (uint64_t addr : additionalEntryPoints) {
+      CHECK(EPR.getInfo(addr))
+          << "Additional entry address points outside of executable";
+      entry_points.push_back(addr);
     }
 
-    if (toVisit.size() == 0) {
-      return make_error_code(FcdError::Main_NoEntryPoint);
-    }
+    CHECK(!entry_points.empty()) << "No entry points found";
 
-    size_t iterations = 0;
-    do {
-      while (toVisit.size() > 0) {
-        auto iter = toVisit.begin();
-        auto functionInfo = iter->second;
-        toVisit.erase(iter);
+    auto IterCondition = [](size_t cur_size, size_t prev_size) {
+      // Only decode addresses already in entry_points.
+      // Do not add new ones.
+      if (isExclusiveDisassembly()) return false;
+      // Decode addresses in entry_points and add
+      // entry point addresses discovered in them.
+      if (isPartialDisassembly()) return prev_size == 0;
+      // Decode until there's nothing new to decode.
+      return cur_size > prev_size;
+    };
 
-        if (functionInfo.name.size() > 0) {
-          transl.setFunctionName(functionInfo.virtualAddress,
-                                 functionInfo.name);
-        }
-
-        if (llvm::Function* fn =
-                transl.createFunction(functionInfo.virtualAddress)) {
-          if (llvm::Function* cFunction =
-                  cDecls->prototypeForAddress(functionInfo.virtualAddress)) {
-            md::setFinalPrototype(*fn, *cFunction);
-          }
-        } else {
-          // Couldn't decompile, abort
-          return make_error_code(FcdError::Main_DecompilationError);
+    size_t prev_size = 0;
+    while (IterCondition(entry_points.size(), prev_size)) {
+      prev_size = entry_points.size();
+      std::list<uint64_t> new_entry_points;
+      for (auto ep_addr : entry_points) {
+        for (auto inst_addr : RTC.DecodeFunction(ep_addr)) {
+          auto& inst = RTC.GetInstMap().find(inst_addr)->second;
+          if (inst.category == remill::Instruction::kCategoryDirectFunctionCall)
+            new_entry_points.push_back(inst.branch_taken_pc);
         }
       }
-      iterations++;
-    } while (refillEntryPoints(transl, entryPoints, toVisit, iterations));
+      entry_points.splice(entry_points.begin(), new_entry_points);
+      entry_points.sort();
+      entry_points.unique();
+    }
+
+    for (auto addr : entry_points) {
+      auto symbol_info = EPR.getInfo(addr);
+      if (auto func = RTC.DeclareFunction(symbol_info->virtualAddress)) {
+        if (symbol_info->name.size() > 0) {
+          func->setName(symbol_info->name);
+        }
+      }
+    }
+
+    for (auto addr : entry_points) {
+      auto func_addr = EPR.getInfo(addr)->virtualAddress;
+      auto func = RTC.DefineFunction(func_addr);
+      CHECK(func) << "Could not lift function at address " << std::hex
+                  << func_addr << std::dec;
+      if (auto cfunc = cdecls->prototypeForAddress(func_addr)) {
+        md::setFinalPrototype(*func, *cfunc);
+      }
+    }
 
     // Perform early optimizations to make the module suitable for analysis
-    auto module = transl.take();
-    llvm::legacy::PassManager phaseOne = createBasePassManager();
-    phaseOne.add(llvm::createExternalAAWrapperPass(&Main::aliasAnalysisHooks));
-    phaseOne.add(llvm::createDeadCodeEliminationPass());
-    phaseOne.add(llvm::createInstructionCombiningPass());
-    phaseOne.add(createRegisterPointerPromotionPass());
-    phaseOne.add(llvm::createGVNPass());
-    phaseOne.add(llvm::createDeadStoreEliminationPass());
-    phaseOne.add(llvm::createInstructionCombiningPass());
-    phaseOne.add(llvm::createGlobalDCEPass());
-    phaseOne.run(*module);
+    // legacy::PassManager phaseOne;
+    // phaseOne.add(llvm::createExternalAAWrapperPass(&Main::aliasAnalysisHooks));
+    // phaseOne.add(llvm::createDeadCodeEliminationPass());
+    // phaseOne.add(llvm::createInstructionCombiningPass());
+    // phaseOne.add(createRegisterPointerPromotionPass());
+    // phaseOne.add(llvm::createGVNPass());
+    // phaseOne.add(llvm::createDeadStoreEliminationPass());
+    // phaseOne.add(llvm::createInstructionCombiningPass());
+    // phaseOne.add(llvm::createGlobalDCEPass());
 
-    // Annotate stubs before returning module
-    llvm::Function* jumpIntrin = module->getFunction("x86_jump_intrin");
-    std::vector<llvm::Function*> functions;
-    for (llvm::Function& fn : module->getFunctionList()) {
-      if (md::isPrototype(fn)) {
-        continue;
-      }
+    RTC.FinalizeModule();
+    // phaseOne.run(RTC.GetModule());
+    // RTC.FinalizeModule();
 
-      llvm::BasicBlock& entry = fn.getEntryBlock();
-      auto terminator = entry.getTerminator();
-      if (llvm::isa<llvm::UnreachableInst>(terminator)) {
-        if (auto prev =
-                llvm::dyn_cast<llvm::CallInst>(terminator->getPrevNode()))
-          if (prev->getCalledFunction() == jumpIntrin)
-            if (auto load = llvm::dyn_cast<llvm::LoadInst>(prev->getOperand(2)))
-              if (auto constantExpr = llvm::dyn_cast<llvm::ConstantExpr>(
-                      load->getPointerOperand())) {
-                std::unique_ptr<llvm::Instruction> inst(
-                    constantExpr->getAsInstruction());
-                if (auto int2ptr =
-                        llvm::dyn_cast<llvm::IntToPtrInst>(inst.get())) {
-                  auto value =
-                      llvm::cast<llvm::ConstantInt>(int2ptr->getOperand(0));
-                  if (const StubInfo* stubTarget =
-                          executable.getStubTarget(value->getLimitedValue())) {
-                    if (llvm::Function* cFunction =
-                            cDecls->prototypeForImportName(stubTarget->name)) {
-                      md::setIsStub(fn);
-                      md::setFinalPrototype(fn, *cFunction);
-                    }
-
-                    // If we identified no function from the header file, this
-                    // gives the import its real
-                    // name. Otherwise, it'll prefix the name with some number.
-                    fn.setName(stubTarget->name);
-                  }
-                }
-              }
+    for (auto& func : RTC.GetModule()) {
+      if (!md::isPrototype(func)) {
+        if (auto cfunc = cdecls->prototypeForImportName(func.getName())) {
+          if (&func != cfunc) {
+            md::setIsStub(func);
+            md::setFinalPrototype(func, *cfunc);
+          }
+        }
       }
     }
-    return move(module);
+
+    // CHECK(llvm::verifyModule(RTC.GetModule()))
+    //     << "Lifted IR module is broken.";
+
+    return RTC.TakeModule();
   }
 
   bool optimizeAndTransformModule(llvm::Module& module,
@@ -529,20 +395,24 @@ class Main {
     llvm::PrettyStackTraceString optimize("Optimizing LLVM IR");
 
     // Phase 3: make into functions with arguments, run codegen.
-    auto passManager = createBasePassManager();
-    passManager.add(new ExecutableWrapper(executable));
-    passManager.add(createParameterRegistryPass());
-    passManager.add(createExternalAAWrapperPass(&Main::aliasAnalysisHooks));
+    llvm::legacy::PassManager pm;
+    pm.add(llvm::createTypeBasedAAWrapperPass());
+    pm.add(llvm::createScopedNoAliasAAWrapperPass());
+    pm.add(llvm::createBasicAAWrapperPass());
+    pm.add(fcd::createAddressSpaceAliasAnalysis());
+    pm.add(new ExecutableWrapper(executable));
+    pm.add(createParameterRegistryPass());
+    pm.add(llvm::createExternalAAWrapperPass(&Main::aliasAnalysisHooks));
     for (llvm::Pass* pass : optimizeAndTransformPasses) {
-      passManager.add(pass);
+      pm.add(pass);
     }
-    passManager.run(module);
+    pm.run(module);
 
 #ifdef FCD_DEBUG
-    if (verifyModule(module, &errorOutput)) {
-      // errors!
-      return false;
-    }
+    // if (llvm::verifyModule(module, &errorOutput)) {
+    //   // errors!
+    //   return false;
+    // }
 #endif
     return true;
   }
@@ -587,13 +457,34 @@ class Main {
   bool prepareOptimizationPasses() {
     // Default passes
     std::vector<std::string> passNames = {
-        "globaldce", "fixindirects", "argrec", "sroa", "intnarrowing",
-        "signext", "instcombine", "intops", "simplifyconditions",
-        // <-- custom passes go here with the default pass pipeline
-        "instcombine", "gvn", "simplifycfg", "instcombine", "gvn",
-        "recoverstackframe", "dse", "sccp", "simplifycfg", "eliminatecasts",
-        "instcombine", "memssadle", "dse", "instcombine", "sroa", "instcombine",
-        "globaldce", "simplifycfg",
+        "globaldce",
+        "fixindirects",  // fcd
+        "argrec",        // fcd
+                         // "sroa",
+                         // "intnarrowing", // fcd
+                         // "signext", // fcd
+                         // "instcombine",
+                         // "intops", // fcd
+                         // "simplifyconditions", // fcd
+        // // <-- custom passes go here with the default pass pipeline
+        // "instcombine",
+        // "gvn",
+        // "simplifycfg",
+        // "instcombine",
+        // "gvn",
+        // "recoverstackframe", // fcd
+        // "dse",
+        // "sccp",
+        // "simplifycfg",
+        // "eliminatecasts", // fcd
+        // "instcombine",
+        // "memssadle", // fcd
+        // "dse",
+        // "instcombine",
+        // "sroa",
+        // "instcombine",
+        // "globaldce",
+        // "simplifycfg",
     };
 
     if (FLAGS_pipeline == "default") {
@@ -624,7 +515,7 @@ class Main {
     return optimizeAndTransformPasses.size() > 0;
   }
 };
-};
+}  // namespace
 
 bool isFullDisassembly() { return !FLAGS_partial && !FLAGS_exclusive; }
 
@@ -639,9 +530,20 @@ bool isEntryPoint(uint64_t vaddr) {
 
 int main(int argc, char** argv) {
   std::stringstream ss("");
+
+  llvm::EnablePrettyStackTrace();
+  llvm::sys::PrintStackTraceOnErrorSignal(argv[0]);
+
   google::InitGoogleLogging(argv[0]);
   google::SetUsageMessage(ss.str());
   google::ParseCommandLineFlags(&argc, &argv, true);
+
+  headerSearchPath = parseListFlag<std::string>(FLAGS_includes, ',');
+  headers = parseListFlag<std::string>(FLAGS_headers, ',');
+  frameworks = parseListFlag<std::string>(FLAGS_frameworks, ',');
+  customPassPipeline = parseListFlag<std::string>(FLAGS_pipeline, ',');
+  additionalPasses = parseListFlag<std::string>(FLAGS_opt, ',');
+  additionalEntryPoints = parseListFlag<uint64_t>(FLAGS_other_entry, ',');
 
   CHECK(FLAGS_pipeline == "default" || FLAGS_opt.empty())
       << "Inserting LLVM IR passes only allowed when using default pipeline.";
@@ -701,16 +603,7 @@ int main(int argc, char** argv) {
     }
 
     executable = move(executableOrError.get());
-    std::string moduleName = llvm::sys::path::stem(inputFile);
-    auto moduleOrError =
-        mainObj.generateAnnotatedModule(*executable, moduleName);
-    if (!moduleOrError) {
-      std::cerr << program << ": couldn't build LLVM module out of "
-                << inputFile << ": " << errorOf(moduleOrError) << std::endl;
-      return 1;
-    }
-
-    module = move(moduleOrError.get());
+    module = mainObj.generateAnnotatedModule(*executable);
   }
 
   // Make sure that the module is legal
@@ -739,6 +632,8 @@ int main(int argc, char** argv) {
 
   if (FLAGS_module_out) {
     module->print(llvm::outs(), nullptr);
+    google::ShutDownCommandLineFlags();
+    google::ShutdownGoogleLogging();
     return 0;
   }
 
