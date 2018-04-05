@@ -41,6 +41,7 @@
 #include "fcd/pass_argrec_remill.h"
 #include "fcd/pass_asaa.h"
 #include "fcd/pass_stackrec_remill.h"
+#include "fcd/pass_intrinsics_remill.h"
 
 namespace fcd {
 namespace {
@@ -518,14 +519,17 @@ const StubInfo *RemillTranslationContext::GetStubInfo(
   if (func->isDeclaration()) {
     return nullptr;
   }
-  llvm::Value *jump_target = nullptr;
 
+  auto jump_intrinsic = remill::FindFunction(func->getParent(), "__fcd_jump");
+  CHECK(jump_intrinsic != nullptr);
+
+  llvm::Value *jump_target = nullptr;
   auto &entry = func->getEntryBlock();
   if (entry.size() > 1) {
     if (auto term = llvm::dyn_cast<llvm::ReturnInst>(entry.getTerminator())) {
       if (auto jump = llvm::dyn_cast<llvm::CallInst>(term->getPrevNode())) {
-        if (jump->getCalledFunction() == intrinsics->jump) {
-          jump_target = jump->getArgOperand(1);
+        if (jump->getCalledFunction() == jump_intrinsic) {
+          jump_target = jump->getArgOperand(0);
         }
       }
     }
@@ -564,56 +568,63 @@ void RemillTranslationContext::FinalizeModule() {
     if (auto asaa = p.getAnalysisIfAvailable<AddressSpaceAAWrapperPass>())
       r.addAAResult(asaa->getResult());
   };
-
-  llvm::legacy::PassManager module_pass_manager;
-  module_pass_manager.add(llvm::createTypeBasedAAWrapperPass());
-  module_pass_manager.add(llvm::createScopedNoAliasAAWrapperPass());
-  module_pass_manager.add(llvm::createBasicAAWrapperPass());
-  module_pass_manager.add(createAddressSpaceAliasAnalysis());
-  module_pass_manager.add(llvm::createExternalAAWrapperPass(AACallBack));
-
-  module_pass_manager.add(llvm::createAlwaysInlinerLegacyPass());
-
-  module_pass_manager.add(createRemillArgumentRecoveryPass());
-
-  module_pass_manager.add(llvm::createPromoteMemoryToRegisterPass());
-  module_pass_manager.add(llvm::createReassociatePass());
-  module_pass_manager.add(llvm::createDeadCodeEliminationPass());
-  module_pass_manager.add(llvm::createCFGSimplificationPass());
-
-  module_pass_manager.add(llvm::createSROAPass());
-  module_pass_manager.add(llvm::createGVNPass());
-  module_pass_manager.add(llvm::createGlobalDCEPass());
-  // module_pass_manager.add(llvm::createVerifierPass());
-
+  
   auto isels = FindISELs(module.get());
   RemoveIntrinsics(module.get());
   PrivatizeISELs(isels);
-  module_pass_manager.run(*module);
-
-  RemoveIntrinsics(module.get());
+  
+  llvm::legacy::PassManager phase_one;
+  phase_one.add(llvm::createAlwaysInlinerLegacyPass());
+  phase_one.add(createRemillArgumentRecoveryPass());
+  phase_one.add(llvm::createPromoteMemoryToRegisterPass());
+  phase_one.add(llvm::createReassociatePass());
+  phase_one.add(llvm::createDeadCodeEliminationPass());
+  phase_one.add(llvm::createCFGSimplificationPass());
+  // phase_one.add(llvm::createVerifierPass());
+  phase_one.run(*module);
+  
   // Lower memory intrinsics into loads and stores
   // Runtime memory address space is 0
   // Program memory address space is given by pmem_addr_space
   LowerMemOps(module.get(), pmem_addr_space);
-
   ReplaceBarrier(module.get(), "__remill_barrier_load_load");
   ReplaceBarrier(module.get(), "__remill_barrier_load_store");
   ReplaceBarrier(module.get(), "__remill_barrier_store_load");
   ReplaceBarrier(module.get(), "__remill_barrier_store_store");
   ReplaceBarrier(module.get(), "__remill_barrier_atomic_begin");
   ReplaceBarrier(module.get(), "__remill_barrier_atomic_end");
+  
+  llvm::legacy::PassManager phase_two;
+  phase_two.add(llvm::createTypeBasedAAWrapperPass());
+  phase_two.add(llvm::createScopedNoAliasAAWrapperPass());
+  phase_two.add(llvm::createBasicAAWrapperPass());
+  phase_two.add(createAddressSpaceAliasAnalysis());
+  phase_two.add(llvm::createExternalAAWrapperPass(AACallBack));
+  phase_two.add(createRemillFixIntrinsicsPass());
+  phase_two.add(llvm::createSROAPass());
+  phase_two.add(llvm::createGVNPass());
+  phase_two.add(llvm::createGlobalDCEPass());
+  // phase_two.add(llvm::createVerifierPass());
+  phase_two.run(*module);
 
-  llvm::legacy::PassManager pm2;
-  pm2.add(llvm::createInstructionCombiningPass());
-  pm2.add(createRemillStackRecoveryPass());
-  // pm2.add(llvm::createPromoteMemoryToRegisterPass());
-  // pm2.add(llvm::createReassociatePass());
-  pm2.add(llvm::createDeadStoreEliminationPass());
-  pm2.add(llvm::createDeadCodeEliminationPass());
-  // pm2.add(llvm::createInstructionCombiningPass());
-  // pm2.add(llvm::createVerifierPass());
-  pm2.run(*module);
+  RemoveIntrinsics(module.get());
+
+  llvm::legacy::PassManager phase_three;
+  phase_three.add(llvm::createTypeBasedAAWrapperPass());
+  phase_three.add(llvm::createScopedNoAliasAAWrapperPass());
+  phase_three.add(llvm::createBasicAAWrapperPass());
+  phase_three.add(createAddressSpaceAliasAnalysis());
+  phase_three.add(llvm::createExternalAAWrapperPass(AACallBack));
+  phase_three.add(llvm::createInstructionCombiningPass());
+  phase_three.add(createRemillStackRecoveryPass());
+  // phase_three.add(llvm::createPromoteMemoryToRegisterPass());
+  // phase_three.add(llvm::createReassociatePass());
+  phase_three.add(llvm::createDeadStoreEliminationPass());
+  phase_three.add(llvm::createDeadCodeEliminationPass());
+  phase_three.add(llvm::createCFGSimplificationPass());
+  // phase_three.add(llvm::createInstructionCombiningPass());
+  // phase_three.add(llvm::createVerifierPass());
+  phase_three.run(*module);
 
   // Attempt to annotate remaining functions as stubs
   for (auto &func : *module) {
