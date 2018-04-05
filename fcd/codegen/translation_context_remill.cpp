@@ -22,12 +22,16 @@
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/IR/Verifier.h>
 
+#include <llvm/Analysis/AliasAnalysis.h>
+#include <llvm/Analysis/BasicAliasAnalysis.h>
+#include <llvm/Analysis/ScopedNoAliasAA.h>
+#include <llvm/Analysis/TypeBasedAliasAnalysis.h>
+
 #include <llvm/Transforms/IPO.h>
 #include <llvm/Transforms/IPO/AlwaysInliner.h>
 #include <llvm/Transforms/Scalar.h>
 #include <llvm/Transforms/Scalar/GVN.h>
 
-#include <iostream>
 #include <sstream>
 #include <string>
 
@@ -562,7 +566,12 @@ void RemillTranslationContext::FinalizeModule() {
   };
 
   llvm::legacy::PassManager module_pass_manager;
+  module_pass_manager.add(llvm::createTypeBasedAAWrapperPass());
+  module_pass_manager.add(llvm::createScopedNoAliasAAWrapperPass());
+  module_pass_manager.add(llvm::createBasicAAWrapperPass());
+  module_pass_manager.add(createAddressSpaceAliasAnalysis());
   module_pass_manager.add(llvm::createExternalAAWrapperPass(AACallBack));
+
   module_pass_manager.add(llvm::createAlwaysInlinerLegacyPass());
 
   module_pass_manager.add(createRemillArgumentRecoveryPass());
@@ -581,13 +590,13 @@ void RemillTranslationContext::FinalizeModule() {
   RemoveIntrinsics(module.get());
   PrivatizeISELs(isels);
   module_pass_manager.run(*module);
-  
+
   RemoveIntrinsics(module.get());
   // Lower memory intrinsics into loads and stores
   // Runtime memory address space is 0
   // Program memory address space is given by pmem_addr_space
   LowerMemOps(module.get(), pmem_addr_space);
-  
+
   ReplaceBarrier(module.get(), "__remill_barrier_load_load");
   ReplaceBarrier(module.get(), "__remill_barrier_load_store");
   ReplaceBarrier(module.get(), "__remill_barrier_store_load");
