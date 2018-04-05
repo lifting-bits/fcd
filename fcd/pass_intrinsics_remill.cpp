@@ -18,10 +18,7 @@
 #include <glog/logging.h>
 
 #include <llvm/IR/IRBuilder.h>
-#include <llvm/IR/InstIterator.h>
 
-#include <iostream>
-#include <map>
 #include <sstream>
 #include <unordered_map>
 #include <vector>
@@ -71,11 +68,10 @@ void RemillFixIntrinsics::getAnalysisUsage(llvm::AnalysisUsage &usage) const {}
 bool RemillFixIntrinsics::runOnModule(llvm::Module &module) {
   sModule = &module;
   std::unordered_map<llvm::Function *, llvm::Function *> funcs;
+  // Create "__fcd*" replacements for "__remill*" intrinsics
   for (auto &func : module) {
     if (IsRemillIntrinsicWithUse(&func)) {
-      // std::cerr << "RemillFixIntrinsics: " << func.getName().str() <<
-      // std::endl;
-
+      // Gather non-lifting arguments from `func`.
       std::vector<llvm::Type *> arg_types;
       for (auto &arg : func.args()) {
         auto arg_type = arg.getType();
@@ -83,30 +79,34 @@ bool RemillFixIntrinsics::runOnModule(llvm::Module &module) {
           arg_types.push_back(arg_type);
         }
       }
-
+      // Determine return type of `new_func`
+      // Replace `Memory` with `void`.
       auto ret_type = func.getReturnType();
       if (IsRemillLiftingArgType(ret_type)) {
         ret_type = llvm::Type::getVoidTy(module.getContext());
       }
-
+      // Create the type for `new_func`
       auto func_type = llvm::FunctionType::get(ret_type, arg_types, false);
-
+      // Create the name for `new_func`
+      // This simply replaces the "__remill" prefix with "__fcd"
       std::stringstream ss;
       ss << "__fcd" << TrimPrefix("__remill", func.getName().str());
+      // Create `new_func`
       auto new_func = llvm::dyn_cast<llvm::Function>(
           module.getOrInsertFunction(ss.str(), func_type));
-
       CHECK(new_func != nullptr);
-
+      // Map `new_func` to the old `func` for later use.
       funcs[&func] = new_func;
     }
   }
-
+  // Replace calls to "__remill*" intrinsics with
+  // calls to "__fcd*" replacements.
   llvm::IRBuilder<> ir(module.getContext());
   for (auto item : funcs) {
     auto old_func = item.first;
     auto new_func = item.second;
     for (auto call : remill::CallersOf(old_func)) {
+      // Gather non-lifting parameter values
       std::vector<llvm::Value *> params;
       for (auto &arg : call->arg_operands()) {
         auto arg_type = arg->getType();
@@ -114,20 +114,24 @@ bool RemillFixIntrinsics::runOnModule(llvm::Module &module) {
           params.push_back(arg);
         }
       }
+      // Create a call to the "__fcd*" replacement
       ir.SetInsertPoint(call);
       auto new_call = ir.CreateCall(new_func, params);
-      auto memptrty = remill::MemoryPointerType(&module);
-      if (call->getType() == memptrty) {
-        call->replaceAllUsesWith(llvm::UndefValue::get(memptrty));
+      auto mem_ptr = remill::MemoryPointerType(&module);
+      // Replace the "__remill*" intrinsic call return value
+      // to either `undef` if the return type is a `Memory`
+      // pointer or the return value of the new call otherwise.
+      if (call->getType() == mem_ptr) {
+        call->replaceAllUsesWith(llvm::UndefValue::get(mem_ptr));
       } else {
         call->replaceAllUsesWith(new_call);
       }
       call->eraseFromParent();
     }
+    // Remove the original "_remill*" intrinsic
     old_func->replaceAllUsesWith(llvm::UndefValue::get(old_func->getType()));
     old_func->eraseFromParent();
   }
-  // module.dump();
   return true;
 }
 
