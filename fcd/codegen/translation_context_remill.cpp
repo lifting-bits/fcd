@@ -22,12 +22,16 @@
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/IR/Verifier.h>
 
+#include <llvm/Analysis/AliasAnalysis.h>
+#include <llvm/Analysis/BasicAliasAnalysis.h>
+#include <llvm/Analysis/ScopedNoAliasAA.h>
+#include <llvm/Analysis/TypeBasedAliasAnalysis.h>
+
 #include <llvm/Transforms/IPO.h>
 #include <llvm/Transforms/IPO/AlwaysInliner.h>
 #include <llvm/Transforms/Scalar.h>
 #include <llvm/Transforms/Scalar/GVN.h>
 
-#include <iostream>
 #include <sstream>
 #include <string>
 
@@ -591,6 +595,10 @@ void RemillTranslationContext::FinalizeModule() {
   ReplaceBarrier(module.get(), "__remill_barrier_atomic_end");
   
   llvm::legacy::PassManager phase_two;
+  phase_two.add(llvm::createTypeBasedAAWrapperPass());
+  phase_two.add(llvm::createScopedNoAliasAAWrapperPass());
+  phase_two.add(llvm::createBasicAAWrapperPass());
+  phase_two.add(createAddressSpaceAliasAnalysis());
   phase_two.add(llvm::createExternalAAWrapperPass(AACallBack));
   phase_two.add(createRemillFixIntrinsicsPass());
   phase_two.add(llvm::createSROAPass());
@@ -602,6 +610,10 @@ void RemillTranslationContext::FinalizeModule() {
   RemoveIntrinsics(module.get());
 
   llvm::legacy::PassManager phase_three;
+  phase_three.add(llvm::createTypeBasedAAWrapperPass());
+  phase_three.add(llvm::createScopedNoAliasAAWrapperPass());
+  phase_three.add(llvm::createBasicAAWrapperPass());
+  phase_three.add(createAddressSpaceAliasAnalysis());
   phase_three.add(llvm::createExternalAAWrapperPass(AACallBack));
   phase_three.add(llvm::createInstructionCombiningPass());
   phase_three.add(createRemillStackRecoveryPass());
