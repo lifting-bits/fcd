@@ -88,7 +88,7 @@ static std::vector<T> ParseListFlag(std::string flag, char sep) {
 }
 
 template <typename T>
-std::string errorOf(const llvm::ErrorOr<T>& error) {
+std::string ErrorOf(const llvm::ErrorOr<T>& error) {
   return error.getError().message();
 }
 
@@ -126,7 +126,7 @@ static std::vector<llvm::Pass*> CreatePassesFromList(
           result.push_back(passOrError.get());
         } else {
           LOG(WARNING) << "Failed to load pass: " << name << ": "
-                       << errorOf(passOrError);
+                       << ErrorOf(passOrError);
         }
       } else if (auto pi = pr->getPassInfo(name)) {
         result.push_back(pi->createPass());
@@ -143,7 +143,7 @@ static std::unique_ptr<Executable> ParseExecutable(llvm::MemoryBuffer& buffer) {
   auto start = reinterpret_cast<const uint8_t*>(buffer.getBufferStart());
   auto end = reinterpret_cast<const uint8_t*>(buffer.getBufferEnd());
   auto exe = Executable::parse(start, end);
-  CHECK(exe) << "Failed to parse executable: " << errorOf(exe);
+  CHECK(exe) << "Failed to parse executable: " << ErrorOf(exe);
   return std::move(exe.get());
 }
 
@@ -305,14 +305,14 @@ static bool InitOptPassPipeline(std::vector<llvm::Pass*>& passes) {
   // Default passes
   std::vector<std::string> pass_names = {
       "globaldce",
-      "fixindirects",  // fcd
-      "argrec",        // fcd
-                       // "sroa",
-                       // "intnarrowing", // fcd
-                       // "signext", // fcd
-                       // "instcombine",
-                       // "intops", // fcd
-                       // "simplifyconditions", // fcd
+      // "fixindirects",  // fcd
+      // "argrec",        // fcd
+      // "sroa",
+      // "intnarrowing", // fcd
+      // "signext", // fcd
+      // "instcombine",
+      // "intops", // fcd
+      // "simplifyconditions", // fcd
       // // <-- custom passes go here with the default pass pipeline
       // "instcombine",
       // "gvn",
@@ -387,7 +387,7 @@ int main(int argc, char** argv) {
 
   CHECK(argc > 1) << "Must specify and input file.";
 
-  std::string inputFile = argv[1];
+  std::string input_file = argv[1];
 
   llvm::LLVMContext llvm;
   PythonContext python(argv[0]);
@@ -408,16 +408,16 @@ int main(int argc, char** argv) {
   // step 1: create annotated module from executable (or load it from .ll)
   if (FLAGS_module_in) {
     llvm::PrettyStackTraceFormat parsingIR("Parsing IR from \"%s\"",
-                                           inputFile.c_str());
+                                           input_file.c_str());
     llvm::SMDiagnostic errs;
-    module = llvm::parseIRFile(inputFile, errs, llvm);
+    module = llvm::parseIRFile(input_file, errs, llvm);
     CHECK(module) << "Failed to parse input file: " << errs.getMessage().str();
   } else {
     llvm::PrettyStackTraceFormat parsingIR("Parsing executable \"%s\"",
-                                           inputFile.c_str());
+                                           input_file.c_str());
 
-    auto buffer = llvm::MemoryBuffer::getFile(inputFile, -1, false);
-    CHECK(buffer) << "Failed to open input file: " << errorOf(buffer);
+    auto buffer = llvm::MemoryBuffer::getFile(input_file, -1, false);
+    CHECK(buffer) << "Failed to open input file: " << ErrorOf(buffer);
 
     executable = ParseExecutable(*buffer.get());
     module = LiftExecutable(*executable);

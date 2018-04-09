@@ -110,6 +110,7 @@ void PreAstContext::generateBlocks(Function& fn)
 			}
 		}
 	}
+
 	
 	for (BasicBlock& bbRef : fn)
 	{
@@ -124,7 +125,7 @@ void PreAstContext::generateBlocks(Function& fn)
 				preAstBB.blockStatement->insert(insertIter, statement);
 			}
 		}
-		
+
 		for (BasicBlock* pred : predecessors(&bbRef))
 		{
 			// Compute edge condition and create edge

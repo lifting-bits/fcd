@@ -22,8 +22,8 @@
 
 #include <memory>
 #include <queue>
-#include <unordered_set>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "remill/Arch/Arch.h"
 #include "remill/Arch/Instruction.h"
@@ -57,7 +57,7 @@ class RemillTranslationContext {
 
  public:
   RemillTranslationContext(llvm::LLVMContext &ctx, Executable &exe);
-  ~RemillTranslationContext(){};
+  ~RemillTranslationContext(void){};
 
   std::unordered_set<uint64_t> DecodeFunction(uint64_t addr);
   std::unordered_set<uint64_t> DecodeFunction(llvm::Function *func) {
@@ -70,20 +70,21 @@ class RemillTranslationContext {
     return DefineFunction(FindFunctionAddr(func));
   }
 
-  llvm::Module &GetModule() const { return *module; }
-  std::unique_ptr<llvm::Module> TakeModule() { return std::move(module); }
-  const std::unordered_map<uint64_t, llvm::Function *> &GetFunctionMap() const {
+  llvm::Module &GetModule(void) const { return *module; }
+  std::unique_ptr<llvm::Module> TakeModule(void) { return std::move(module); }
+  const std::unordered_map<uint64_t, llvm::Function *> &GetFunctionMap(
+      void) const {
     return functions;
   }
 
-  const std::unordered_map<uint64_t, remill::Instruction> &GetInstMap() const {
+  const std::unordered_map<uint64_t, remill::Instruction> &GetInstMap(
+      void) const {
     return insts;
   }
-  
+
   const StubInfo *GetStubInfo(llvm::Function *func) const;
 
-  void FinalizeModule();
-
+  void FinalizeModule(void);
 };
 
 }  // namespace fcd

@@ -563,16 +563,16 @@ const StubInfo *RemillTranslationContext::GetStubInfo(
   return addr ? executable.getStubTarget(addr->getLimitedValue()) : nullptr;
 }
 
-void RemillTranslationContext::FinalizeModule() {
+void RemillTranslationContext::FinalizeModule(void) {
   auto AACallBack = [](llvm::Pass &p, llvm::Function &f, llvm::AAResults &r) {
     if (auto asaa = p.getAnalysisIfAvailable<AddressSpaceAAWrapperPass>())
       r.addAAResult(asaa->getResult());
   };
-  
+
   auto isels = FindISELs(module.get());
   RemoveIntrinsics(module.get());
   PrivatizeISELs(isels);
-  
+
   llvm::legacy::PassManager phase_one;
   phase_one.add(llvm::createAlwaysInlinerLegacyPass());
   phase_one.add(createRemillArgumentRecoveryPass());
@@ -582,7 +582,7 @@ void RemillTranslationContext::FinalizeModule() {
   phase_one.add(llvm::createCFGSimplificationPass());
   // phase_one.add(llvm::createVerifierPass());
   phase_one.run(*module);
-  
+
   // Lower memory intrinsics into loads and stores
   // Runtime memory address space is 0
   // Program memory address space is given by pmem_addr_space
@@ -593,7 +593,7 @@ void RemillTranslationContext::FinalizeModule() {
   ReplaceBarrier(module.get(), "__remill_barrier_store_store");
   ReplaceBarrier(module.get(), "__remill_barrier_atomic_begin");
   ReplaceBarrier(module.get(), "__remill_barrier_atomic_end");
-  
+
   llvm::legacy::PassManager phase_two;
   phase_two.add(llvm::createTypeBasedAAWrapperPass());
   phase_two.add(llvm::createScopedNoAliasAAWrapperPass());

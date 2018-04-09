@@ -10,6 +10,7 @@
 #include "expression_use.h"
 #include "expressions.h"
 
+
 using namespace llvm;
 using namespace std;
 
@@ -100,7 +101,7 @@ void ExpressionUse::setUse(Expression *target)
 	// unlink
 	setPrevNext(next);
 	setNextPrev(prev.getPointer());
-	
+
 	// link with new expression
 	expression = target;
 	if (expression == nullptr)

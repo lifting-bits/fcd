@@ -147,10 +147,11 @@ public:
 		}
 		else if (auto constant = dyn_cast<Constant>(&val))
 		{
-			return visitConstant(*constant);
+			return visitConstant(*constant);;
 		}
 		else if (auto arg = dyn_cast<Argument>(&val))
 		{
+
 			string argName = arg->getName();
 			if (argName.size() == 0 || argName[0] == '\0')
 			{
@@ -158,11 +159,13 @@ public:
 			}
 			return ctx.token(ctx.getType(*arg->getType()), argName);
 		}
+
 		llvm_unreachable("unexpected type of value");
 	}
 	
 	Expression* visitConstant(Constant& constant)
 	{
+
 		if (auto constantInt = dyn_cast<ConstantInt>(&constant))
 		{
 			assert(constantInt->getValue().ule(numeric_limits<uint64_t>::max()));
@@ -177,23 +180,35 @@ public:
 		
 		if (auto structure = dyn_cast<ConstantStruct>(&constant))
 		{
-			unsigned items = structure->getNumOperands();
+			auto items = structure->getNumOperands();
 			auto agg = ctx.aggregate(ctx.getType(*structure->getType()), items);
 			for (unsigned i = 0; i < items; ++i)
 			{
-				auto operand = structure->getOperand(i);
+				auto operand = structure->getAggregateElement(i);
 				agg->setOperand(i, valueFor(*operand));
 			}
 			return agg;
 		}
-		
-		if (auto zero = dyn_cast<ConstantAggregateZero>(&constant))
+
+		if (auto seqdata = dyn_cast<ConstantDataSequential>(&constant))
 		{
-			unsigned items = zero->getNumElements();
-			auto agg = ctx.aggregate(ctx.getType(*zero->getType()), items);
+			auto items = seqdata->getNumElements();
+			auto agg = ctx.aggregate(ctx.getType(*seqdata->getType()), items);
 			for (unsigned i = 0; i < items; ++i)
 			{
-				auto operand = zero->getStructElement(i);
+				auto operand = seqdata->getElementAsConstant(i);
+				agg->setOperand(i, valueFor(*operand));
+			}
+			return agg;
+		}
+
+		if (auto zero = dyn_cast<ConstantAggregateZero>(&constant))
+		{
+			auto items = zero->getNumElements();
+			auto agg = ctx.aggregate(ctx.getType(*zero->getType()), items);
+			for (auto i = 0; i < items; ++i)
+			{
+				auto operand = isa<ConstantStruct>(zero) ? zero->getStructElement(i) : zero->getSequentialElement();
 				agg->setOperand(i, valueFor(*operand));
 			}
 			return agg;
@@ -228,6 +243,13 @@ public:
 			return ctx.expressionForNull();
 		}
 		
+		if (auto globvar = dyn_cast<GlobalVariable>(&constant))
+		{
+			if (globvar->hasInitializer())
+			{
+				return visitConstant(*globvar->getInitializer());
+			}
+		}
 		llvm_unreachable("unexpected type of constant");
 	}
 	

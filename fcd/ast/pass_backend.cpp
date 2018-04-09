@@ -866,7 +866,6 @@ bool AstBackEnd::runOnModule(llvm::Module &m)
 			return false;
 		}
 	});
-	
 	// run passes
 	for (auto& pass : passes)
 	{
@@ -886,7 +885,7 @@ void AstBackEnd::runOnFunction(Function& fn)
 	
 	// Ensure that loops all have an exit node, for the sake of the post-dominator tree.
 	ensureLoopsExit(*blockGraph);
-	
+
 	// Compute regions.
 	PreAstBasicBlockRegionTraits::DomTreeT domTree(false);
 	PreAstBasicBlockRegionTraits::PostDomTreeT postDomTree(true);
