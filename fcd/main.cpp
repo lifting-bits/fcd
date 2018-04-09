@@ -255,9 +255,6 @@ static bool RunPassPipeline(llvm::Module& module,
             p.getAnalysisIfAvailable<fcd::AddressSpaceAAWrapperPass>()) {
       r.addAAResult(asaa->getResult());
     }
-    if (auto params = p.getAnalysisIfAvailable<ParameterRegistry>()) {
-      r.addAAResult(params->getAAResult());
-    }
   };
 
   // Phase 3: make into functions with arguments, run codegen.
@@ -266,8 +263,6 @@ static bool RunPassPipeline(llvm::Module& module,
   pm.add(llvm::createScopedNoAliasAAWrapperPass());
   pm.add(llvm::createBasicAAWrapperPass());
   pm.add(fcd::createAddressSpaceAliasAnalysis());
-  pm.add(new ExecutableWrapper(executable));
-  pm.add(createParameterRegistryPass());
   pm.add(llvm::createExternalAAWrapperPass(AACallBack));
   for (llvm::Pass* pass : passes) {
     pm.add(pass);
@@ -317,7 +312,7 @@ static bool InitOptPassPipeline(std::vector<llvm::Pass*>& passes) {
       // "instcombine",
       // "gvn",
       // "simplifycfg",
-      // "instcombine",
+      // "instcombine"
       // "gvn",
       // "recoverstackframe", // fcd
       // "dse",
