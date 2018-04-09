@@ -10,6 +10,9 @@
 #ifndef expression_context_hpp
 #define expression_context_hpp
 
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
 #include "dumb_allocator.h"
 #include "expression_type.h"
 #include "expressions.h"
@@ -75,7 +78,7 @@ class AstContext
 	template<bool HasUses, typename T, typename... TArgs, typename = typename std::enable_if<std::is_base_of<Expression, T>::value, T>::type>
 	T* allocate(unsigned useCount, TArgs&&... args)
 	{
-		assert(HasUses || useCount == 0);
+		CHECK(HasUses || useCount == 0);
 		void* result = HasUses
 			? prepareStorageAndUses(useCount, sizeof(T))
 			: pool.allocateDynamic<char>(sizeof(T), alignof(T));
@@ -128,7 +131,7 @@ public:
 	Expression* nary(NAryOperatorExpression::NAryOperatorType type, Iterator begin, Iterator end, bool returnSingle = false)
 	{
 		auto count = static_cast<unsigned>(end - begin);
-		assert(count > 0);
+		CHECK(count > 0);
 		if (count == 1 && returnSingle)
 		{
 			return *begin;

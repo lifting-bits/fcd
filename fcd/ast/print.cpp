@@ -7,6 +7,9 @@
 // license. See LICENSE.md for details.
 //
 
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
 #include "expression_type.h"
 #include "print.h"
 #include "type_printer.h"
@@ -336,7 +339,7 @@ void StatementPrintVisitor::visit(const ExpressionUser &user)
 	const Expression* oldParent = parentExpression;
 	if (auto expr = dyn_cast<Expression>(&user))
 	{
-		assert(os.str().length() == 0);
+		CHECK(os.str().length() == 0);
 		if (auto token = getIdentifier(*expr))
 		{
 			usedByStatement.push_back(expr);
@@ -349,7 +352,7 @@ void StatementPrintVisitor::visit(const ExpressionUser &user)
 	}
 	
 	AstVisitor::visit(user);
-	assert(!isa<Statement>(user) || os.str().length() == 0);
+	CHECK(!isa<Statement>(user) || os.str().length() == 0);
 	
 	if (isa<Expression>(user))
 	{
@@ -383,7 +386,7 @@ void StatementPrintVisitor::visitUnaryOperator(const UnaryOperatorExpression& un
 
 void StatementPrintVisitor::visitNAryOperator(const NAryOperatorExpression& nary)
 {
-	assert(nary.operands_size() > 0);
+	CHECK(nary.operands_size() > 0);
 
 	const string* displayName = &badOperator;
 	unsigned precedence = numeric_limits<unsigned>::max();
@@ -471,7 +474,7 @@ void StatementPrintVisitor::visitNumeric(const NumericExpression& numeric)
 
 void StatementPrintVisitor::visitToken(const TokenExpression& token)
 {
-	assert(token.token[0] != '\0');
+	CHECK(token.token[0] != '\0');
 	os << token.token;
 }
 
@@ -671,7 +674,7 @@ void StatementPrintVisitor::visitLoop(const LoopStatement& loop)
 	}
 	else
 	{
-		assert(loop.getPosition() == LoopStatement::PostTested);
+		CHECK(loop.getPosition() == LoopStatement::PostTested);
 		
 		// do...while loops need special treatment to embed the condition calculation inside the loop
 		

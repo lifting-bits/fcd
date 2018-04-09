@@ -7,6 +7,9 @@
 // license. See LICENSE.md for details.
 //
 
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
 #include "ast_passes.h"
 #include "visitor.h"
 
@@ -289,7 +292,7 @@ namespace
 		
 		void visitDefault(ExpressionUser& user)
 		{
-			llvm_unreachable("unimplemented expression simplification case");
+			CHECK(false) << "Unimplemented expression simplification case";
 		}
 	};
 	
@@ -343,7 +346,7 @@ namespace
 		
 		void visitDefault(ExpressionUser& user)
 		{
-			llvm_unreachable("unimplemented expression simplification case");
+			CHECK(false) << "Unimplemented expression simplification case";
 		}
 	};
 }

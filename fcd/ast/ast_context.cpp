@@ -7,6 +7,9 @@
 // license. See LICENSE.md for details.
 //
 
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
 #include "ast_context.h"
 #include "expressions.h"
 #include "metadata.h"
@@ -46,7 +49,7 @@ namespace
 		};
 #undef MAP_OP
 		
-		assert(op >= BinaryOperator::BinaryOpsBegin && op < BinaryOperator::BinaryOpsEnd);
+		CHECK(op >= BinaryOperator::BinaryOpsBegin && op < BinaryOperator::BinaryOpsEnd);
 		return operatorMap[op];
 	}
 	
@@ -86,7 +89,7 @@ namespace
 		};
 #undef MAP_OP
 		
-		assert(pred < CmpInst::BAD_ICMP_PREDICATE || pred < CmpInst::BAD_FCMP_PREDICATE);
+		CHECK(pred < CmpInst::BAD_ICMP_PREDICATE || pred < CmpInst::BAD_FCMP_PREDICATE);
 		return operatorMap[pred];
 	}
 }
@@ -120,7 +123,7 @@ class InstToExpr : public llvm::InstVisitor<InstToExpr, Expression*>
 				return ctx.memberAccess(base, static_cast<unsigned>(constant->getLimitedValue()));
 			}
 		}
-		llvm_unreachable("not implemented");
+		CHECK(false) << "Not implemented";
 	}
 	
 	CallExpression* callFor(NOT_NULL(Expression) callee, ArrayRef<Value*> parameters)
@@ -160,7 +163,7 @@ public:
 			return ctx.token(ctx.getType(*arg->getType()), argName);
 		}
 
-		llvm_unreachable("unexpected type of value");
+		CHECK(false) << "Unexpected type of value";
 	}
 	
 	Expression* visitConstant(Constant& constant)
@@ -168,7 +171,7 @@ public:
 
 		if (auto constantInt = dyn_cast<ConstantInt>(&constant))
 		{
-			assert(constantInt->getValue().ule(numeric_limits<uint64_t>::max()));
+			CHECK(constantInt->getValue().ule(numeric_limits<uint64_t>::max()));
 			return ctx.numeric(ctx.getIntegerType(false, (unsigned short)constantInt->getBitWidth()), constantInt->getLimitedValue());
 		}
 		
@@ -250,12 +253,12 @@ public:
 				return visitConstant(*globvar->getInitializer());
 			}
 		}
-		llvm_unreachable("unexpected type of constant");
+		CHECK(false) << "Unexpected type of constant";
 	}
 	
 	Expression* visitInstruction(Instruction& inst)
 	{
-		llvm_unreachable("unexpected type of instruction");
+		CHECK(false) << "Unexpected type of instruction";
 	}
 	
 	VISIT(PHINode)
@@ -404,7 +407,7 @@ public:
 	VISIT(InsertValueInst)
 	{
 		// we will clearly need additional work for InsertValueInsts that go deeper than the first level
-		assert(inst.getNumIndices() == 1);
+		CHECK(inst.getNumIndices() == 1);
 		
 		auto baseValue = cast<AggregateExpression>(valueFor(*inst.getAggregateOperand()));
 		auto newItem = valueFor(*inst.getInsertedValueOperand());
@@ -576,7 +579,7 @@ void* AstContext::prepareStorageAndUses(unsigned useCount, size_t storage)
 	
 	// The rest of the buffer will be initialized by a placement new
 	auto objectStorage = reinterpret_cast<void*>(pointer + useDataSize);
-	assert((reinterpret_cast<uintptr_t>(objectStorage) & (alignof(void*) - 1)) == 0);
+	CHECK((reinterpret_cast<uintptr_t>(objectStorage) & (alignof(void*) - 1)) == 0);
 	
 	return objectStorage;
 }
@@ -668,7 +671,7 @@ Statement* AstContext::statementFor(Instruction &inst)
 	{
 		Expression* phiOut = expressionFor(inst);
 		Expression* phiIn = phiReadsToWrites[phiOut];
-		assert(phiIn != nullptr);
+		CHECK(phiIn != nullptr);
 		auto assignment = nary(NAryOperatorExpression::Assign, phiOut, phiIn);
 		return expr(assignment);
 	}
@@ -793,7 +796,7 @@ const ExpressionType& AstContext::getType(Type &type)
 	}
 	else
 	{
-		llvm_unreachable("unknown LLVM type");
+		CHECK(false) << "Unknown LLVM type";
 	}
 }
 

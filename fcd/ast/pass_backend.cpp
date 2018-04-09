@@ -7,6 +7,9 @@
 // license. See LICENSE.md for details.
 //
 
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
 #include "metadata.h"
 #include "passes.h"
 #include "pass_backend.h"
@@ -172,7 +175,7 @@ namespace
 			}
 			else
 			{
-				llvm_unreachable("empty conjunction?!");
+				CHECK(false) << "Empty conjunction?!";
 			}
 		}
 		
@@ -415,7 +418,7 @@ namespace
 			{
 				// Create reaching condition and insert block in larger sequence.
 				auto result = reachingConditions.insert({bb, {}});
-				assert(result.second); (void) result;
+				CHECK(result.second); (void) result;
 				
 				auto& disjunction = result.first->second;
 				for (auto predEdge : bb->predecessors)
@@ -804,7 +807,7 @@ namespace
 			}
 			
 			reduceRegion(nullptr);
-			assert(blocksInReversePostOrder.size() == 1);
+			CHECK(blocksInReversePostOrder.size() == 1);
 			return move(blocksInReversePostOrder.front()->blockStatement);
 		}
 	};
@@ -830,7 +833,7 @@ void AstBackEnd::getAnalysisUsage(llvm::AnalysisUsage &au) const
 
 void AstBackEnd::addPass(AstModulePass *pass)
 {
-	assert(pass != nullptr);
+	CHECK(pass != nullptr);
 	passes.emplace_back(pass);
 }
 

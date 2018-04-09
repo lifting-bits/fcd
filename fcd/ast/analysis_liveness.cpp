@@ -6,6 +6,9 @@
 //  Copyright © 2017 Félix Cloutier. All rights reserved.
 //
 
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
 #include "analysis_liveness.h"
 #include "function.h"
 
@@ -118,7 +121,7 @@ void LivenessAnalysis::collectStatementIndices(StatementList& list)
 	{
 		size_t index = flatStatements.size();
 		auto result = statementStartIndices.insert({stmt, index});
-		assert(result.second); (void) result;
+		CHECK(result.second); (void) result;
 		flatStatements.push_back(stmt);
 		
 		if (auto ifElse = dyn_cast<IfElseStatement>(stmt))
@@ -147,11 +150,11 @@ void LivenessAnalysis::collectStatementIndices(StatementList& list)
 		}
 		else if (!isa<KeywordStatement>(stmt))
 		{
-			llvm_unreachable("Unknown statement type!");
+			CHECK(false) << "Unknown statement type!";
 		}
 		
 		result = statementEndIndices.insert({stmt, flatStatements.size()});
-		assert(result.second); (void) result;
+		CHECK(result.second); (void) result;
 	}
 }
 
@@ -243,7 +246,7 @@ void LivenessAnalysis::collectStatementIndices(FunctionNode& function)
 		for (AssignableUseDef useDef : pair.second)
 		{
 			auto useDefStatements = getStatements(*useDef.get());
-			assert(useDef.isUse() || useDefStatements.size() == 1);
+			CHECK(useDef.isUse() || useDefStatements.size() == 1);
 			for (Statement* statement : useDefStatements)
 			{
 				statements.emplace_back(useDef, statement);

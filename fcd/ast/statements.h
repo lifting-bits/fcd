@@ -10,6 +10,9 @@
 #ifndef fcd__ast_statements_h
 #define fcd__ast_statements_h
 
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
 #include <iterator>
 #include "expression_use.h"
 #include "expressions.h"
@@ -184,7 +187,7 @@ public:
 	Statement(UserType type, unsigned allocatedUses = 0)
 	: ExpressionUser(type, allocatedUses), list(nullptr), previous(nullptr), next(nullptr)
 	{
-		assert(type >= StatementMin && type < StatementMax);
+		CHECK(type >= StatementMin && type < StatementMax);
 	}
 	
 	StatementList* getParentList() { return list; }

@@ -10,6 +10,9 @@
 #ifndef fcd__ast_expressions_h
 #define fcd__ast_expressions_h
 
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
 #include "dumb_allocator.h"
 #include "expression_type.h"
 #include "expression_use.h"
@@ -82,7 +85,7 @@ public:
 	Expression(UserType type, AstContext& ctx, unsigned allocatedUses, unsigned usedUses)
 	: ExpressionUser(type, allocatedUses, usedUses), firstUse(nullptr)
 	{
-		assert(type >= ExpressionMin && type < ExpressionMax);
+		CHECK(type >= ExpressionMin && type < ExpressionMax);
 		// The context parameter only forces subclasses to accept one, for uniformity purposes.
 		(void)ctx;
 	}
@@ -151,7 +154,7 @@ public:
 	UnaryOperatorExpression(AstContext& ctx, unsigned uses, UnaryOperatorType type, NOT_NULL(Expression) operand)
 	: Expression(UnaryOperator, ctx, uses), type(type)
 	{
-		assert(uses == 1);
+		CHECK(uses == 1);
 		setOperand(operand);
 	}
 	
@@ -216,14 +219,14 @@ public:
 	NAryOperatorExpression(AstContext& ctx, unsigned uses, NAryOperatorType type)
 	: Expression(NAryOperator, ctx, uses), type(type)
 	{
-		assert(uses > 0);
+		CHECK(uses > 0);
 	}
 	
 	template<typename... TExpressionType>
 	NAryOperatorExpression(AstContext& ctx, unsigned uses, NAryOperatorType type, TExpressionType... expressions)
 	: Expression(NAryOperator, ctx, uses, sizeof...(TExpressionType)), type(type)
 	{
-		assert(uses >= sizeof...(TExpressionType));
+		CHECK(uses >= sizeof...(TExpressionType));
 		setOperand(0, expressions...);
 	}
 	
@@ -245,8 +248,8 @@ class MemberAccessExpression final : public Expression
 	MemberAccessExpression(AstContext& ctx, unsigned uses, NOT_NULL(Expression) base, std::pair<UserType, const StructExpressionType*> initInfo, unsigned fieldIndex)
 	: Expression(initInfo.first, ctx, uses), structureType(*initInfo.second), fieldIndex(fieldIndex)
 	{
-		assert(uses == 1);
-		assert(classof(this));
+		CHECK(uses == 1);
+		CHECK(classof(this));
 		setBaseExpression(base);
 	}
 	
@@ -295,7 +298,7 @@ public:
 	TernaryExpression(AstContext& ctx, unsigned uses, NOT_NULL(Expression) condition, NOT_NULL(Expression) ifTrue, NOT_NULL(Expression) ifFalse)
 	: Expression(Ternary, ctx, uses)
 	{
-		assert(uses == 3);
+		CHECK(uses == 3);
 		setCondition(condition);
 		setTrueValue(ifTrue);
 		setFalseValue(ifFalse);
@@ -326,13 +329,13 @@ struct NumericExpression final : public Expression
 	NumericExpression(AstContext& ctx, unsigned uses, const IntegerExpressionType& type, uint64_t ui)
 	: Expression(Numeric, ctx, uses), expressionType(type), ui64(ui)
 	{
-		assert(uses == 0);
+		CHECK(uses == 0);
 	}
 	
 	NumericExpression(AstContext& ctx, unsigned uses, const IntegerExpressionType& type, int64_t si)
 	: Expression(Numeric, ctx, uses), expressionType(type), si64(si)
 	{
-		assert(uses == 0);
+		CHECK(uses == 0);
 	}
 	
 	virtual const IntegerExpressionType& getExpressionType(AstContext&) const override { return expressionType; }
@@ -366,7 +369,7 @@ public:
 	explicit CallExpression(AstContext& ctx, unsigned uses, NOT_NULL(Expression) callee)
 	: Expression(Call, ctx, uses)
 	{
-		assert(uses > 0);
+		CHECK(uses > 0);
 		setCallee(callee);
 	}
 	
@@ -421,7 +424,7 @@ public:
 	explicit CastExpression(AstContext& ctx, unsigned uses, const ExpressionType& type, NOT_NULL(Expression) value)
 	: Expression(Cast, ctx, uses), expressionType(type)
 	{
-		assert(uses == 1);
+		CHECK(uses == 1);
 		setCastValue(value);
 	}
 	

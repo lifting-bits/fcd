@@ -7,6 +7,9 @@
 // license. See LICENSE.md for details.
 //
 
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
 #include "type_printer.h"
 
 #include <llvm/Support/Casting.h>
@@ -144,6 +147,6 @@ void CTypePrinter::print(raw_ostream& os, const ExpressionType& type, string mid
 		case ExpressionType::Function:
 			return print(os, cast<FunctionExpressionType>(type), move(middle));
 		default:
-			llvm_unreachable("unhandled expression type");
+			CHECK(false) << "Unhandled expression type";
 	}
 }

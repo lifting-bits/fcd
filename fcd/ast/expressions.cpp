@@ -6,6 +6,8 @@
 // This file is distributed under the University of Illinois Open Source
 // license. See LICENSE.md for details.
 //
+#include <gflags/gflags.h>
+#include <glog/logging.h>
 
 #include "ast_context.h"
 #include "expressions.h"
@@ -175,7 +177,7 @@ const ExpressionType& UnaryOperatorExpression::getExpressionType(AstContext &con
 			return cast<PointerExpressionType>(operandType).getNestedType();
 			
 		default:
-			llvm_unreachable("don't know how to infer expression type");
+			CHECK(false) << "Don't know how to infer expression type";
 	}
 }
 
@@ -212,7 +214,7 @@ const ExpressionType& NAryOperatorExpression::getExpressionType(AstContext &cont
 			return context.getIntegerType(false, 1);
 			
 		default:
-			llvm_unreachable("don't know how to infer expression type");
+			CHECK(false) << "Don't know how to infer expression type";
 	}
 }
 
@@ -278,8 +280,8 @@ bool NumericExpression::operator==(const Expression& that) const
 TokenExpression::TokenExpression(AstContext& ctx, unsigned uses, const ExpressionType& type, llvm::StringRef token)
 : Expression(Token, ctx, uses), expressionType(type), token(ctx.getPool().copyString(token))
 {
-	assert(uses == 0);
-	assert(token.size() > 0 && token[0] != '\0');
+	CHECK(uses == 0);
+	CHECK(token.size() > 0 && token[0] != '\0');
 }
 
 bool TokenExpression::operator==(const Expression& that) const
@@ -352,7 +354,7 @@ const ExpressionType& SubscriptExpression::getExpressionType(AstContext& context
 	}
 	else
 	{
-		llvm_unreachable("don't know how to infer type");
+		CHECK(false) << "Don't know how to infer type";
 	}
 }
 
@@ -366,7 +368,7 @@ AssemblyExpression::AssemblyExpression(AstContext& ctx, unsigned uses, const Fun
 , expressionType(ctx.getPointerTo(type))
 , assembly(ctx.getPool().copyString(assembly))
 {
-	assert(uses == 0);
+	CHECK(uses == 0);
 }
 
 bool AssemblyExpression::operator==(const Expression& that) const
@@ -384,7 +386,7 @@ AssignableExpression::AssignableExpression(AstContext& ctx, unsigned uses, const
 , prefix(ctx.getPool().copyString(prefix))
 , addressable(addressable)
 {
-	assert(uses == 0);
+	CHECK(uses == 0);
 }
 
 bool AssignableExpression::operator==(const Expression& that) const

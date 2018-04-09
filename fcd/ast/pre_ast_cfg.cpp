@@ -7,6 +7,9 @@
 // license. See LICENSE.md for details.
 //
 
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
 #include "ast_context.h"
 #include "pre_ast_cfg.h"
 
@@ -47,7 +50,7 @@ void PreAstBasicBlockEdge::setTo(PreAstBasicBlock& newTo)
 		}
 	}
 	
-	llvm_unreachable("Edge not found in predecessor!");
+	CHECK(false) << "Edge not found in predecessor!";
 }
 
 PreAstBasicBlock::PreAstBasicBlock(PreAstBasicBlock&& that)
@@ -141,7 +144,7 @@ void PreAstContext::generateBlocks(Function& fn)
 					}
 					else
 					{
-						assert(&bbRef == branch->getSuccessor(1));
+						CHECK(&bbRef == branch->getSuccessor(1));
 						edgeCondition = ctx.negate(branchCondition);
 					}
 				}
@@ -188,7 +191,7 @@ void PreAstContext::generateBlocks(Function& fn)
 			}
 			else
 			{
-				llvm_unreachable("Unknown terminator with successors!");
+				CHECK(false) << "Unknown terminator with successors!";
 			}
 			
 			PreAstBasicBlock& predAstBB = *blockMapping.at(pred);

@@ -7,6 +7,9 @@
 // license. See LICENSE.md for details.
 //
 
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
 #include "ast_passes.h"
 #include "visitor.h"
 
@@ -84,7 +87,7 @@ namespace
 		
 		bool visitDefault(ExpressionUser& user)
 		{
-			llvm_unreachable("unimplemented expression clone case");
+			CHECK(false) << "Unimplemented expression clone case";
 		}
 	};
 	
@@ -229,7 +232,7 @@ namespace
 		
 		StatementReference visitDefault(ExpressionUser& user)
 		{
-			llvm_unreachable("unimplemented nested combiner case");
+			CHECK(false) << "Unimplemented nested combiner case";
 		}
 	};
 }

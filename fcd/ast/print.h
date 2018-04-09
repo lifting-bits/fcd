@@ -88,7 +88,7 @@ public:
 	void visitExpr(const ExpressionStatement& expression);
 	
 	void visitTemporary(const ExpressionUser& reference);
-	void visitDefault(const ExpressionUser& user) { llvm_unreachable("missing print code"); }
+	void visitDefault(const ExpressionUser& user) { CHECK(false) << "Missing print code"; }
 };
 
 #endif /* fcd__ast_print_h */

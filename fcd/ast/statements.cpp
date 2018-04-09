@@ -7,6 +7,9 @@
 // license. See LICENSE.md for details.
 //
 
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
 #include "statements.h"
 #include "function.h"
 #include "visitor.h"
@@ -101,7 +104,7 @@ void StatementList::insert(NOT_NULL(Statement) location, StatementList&& list)
 
 void StatementList::insert(iterator iter, NOT_NULL(Statement) statement)
 {
-	assert(statement->list == nullptr);
+	CHECK(statement->list == nullptr);
 	Statement* next = *iter;
 	
 	if (next == nullptr)
@@ -148,7 +151,7 @@ void StatementList::insert(iterator iter, StatementList &&that)
 
 void StatementList::push_front(NOT_NULL(Statement) statement)
 {
-	assert(statement->list == nullptr && statement->previous == nullptr && statement->next == nullptr);
+	CHECK(statement->list == nullptr && statement->previous == nullptr && statement->next == nullptr);
 	
 	statement->list = this;
 	if (first == nullptr)
@@ -165,7 +168,7 @@ void StatementList::push_front(NOT_NULL(Statement) statement)
 
 void StatementList::push_front(StatementList&& that)
 {
-	assert(this != &that);
+	CHECK(this != &that);
 	while (!that.empty())
 	{
 		push_front(that.pop_back());
@@ -174,7 +177,7 @@ void StatementList::push_front(StatementList&& that)
 
 void StatementList::push_back(NOT_NULL(Statement) statement)
 {
-	assert(statement->list == nullptr && statement->previous == nullptr && statement->next == nullptr);
+	CHECK(statement->list == nullptr && statement->previous == nullptr && statement->next == nullptr);
 	
 	statement->list = this;
 	if (last == nullptr)
@@ -191,7 +194,7 @@ void StatementList::push_back(NOT_NULL(Statement) statement)
 
 void StatementList::push_back(StatementList&& that)
 {
-	assert(this != &that);
+	CHECK(this != &that);
 	while (!that.empty())
 	{
 		push_back(that.pop_front());
@@ -209,7 +212,7 @@ void StatementList::erase(NOT_NULL(Statement) statement)
 StatementList::iterator StatementList::erase(iterator iter)
 {
 	Statement* target = *iter;
-	assert(target->list == this);
+	CHECK(target->list == this);
 	
 	Statement* oldPrev = target->previous;
 	Statement* oldNext = target->next;

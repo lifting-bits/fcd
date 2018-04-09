@@ -7,6 +7,9 @@
 // license. See LICENSE.md for details.
 //
 
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
 #include "analysis_liveness.h"
 #include "ast_passes.h"
 #include "visitor.h"
@@ -46,7 +49,7 @@ namespace
 {
 	void mergeVariables(AstContext& ctx, Expression* toReplace, Expression* replaceWith)
 	{
-		assert(toReplace != replaceWith);
+		CHECK(toReplace != replaceWith);
 		while (!toReplace->uses_empty())
 		{
 			auto& use = *toReplace->uses_begin();
@@ -129,7 +132,7 @@ void AstMergeCongruentVariables::doRun(FunctionNode &fn)
 		auto iter = memoryOperations.upper_bound(memoryOperationStatement);
 		if (iter == memoryOperations.end() || *iter >= firstUseLocation)
 		{
-			assert(cast<ExpressionStatement>(declaration)->getExpression() == expr);
+			CHECK(cast<ExpressionStatement>(declaration)->getExpression() == expr);
 			// However, the transformation is only valid if the definition and the use have the same reaching condition:
 			// for instance, in `a = foo(); if (bar) puts(a);` is not the same as `if (bar) puts(foo())`, since in the
 			// first case `foo()` is called unconditionally.
@@ -153,7 +156,7 @@ void AstMergeCongruentVariables::doRun(FunctionNode &fn)
 			}
 			
 			auto user = useDef.get()->getUser();
-			assert(cast<NAryOperatorExpression>(user)->getType() == NAryOperatorExpression::Assign);
+			CHECK(cast<NAryOperatorExpression>(user)->getType() == NAryOperatorExpression::Assign);
 			for (Expression* assignmentOperand : user->operands())
 			{
 				if (assignmentOperand != key && find(assignableExpressions, assignmentOperand) != assignableExpressions.end())
