@@ -34,6 +34,16 @@ StatementList::StatementList(Statement* parent, StatementList&& that)
 	}
 }
 
+StatementList::StatementList(Statement* parent, const StatementList& that)
+: StatementList(parent)
+{
+	for (auto stmt = that.first; stmt != nullptr; stmt = stmt->next)
+	{
+		insert(end(), stmt);
+	}
+}
+
+
 StatementList::StatementList(Statement* parent, initializer_list<Statement*> statements)
 : StatementList(parent)
 {
@@ -242,8 +252,7 @@ void StatementList::clear()
 
 void StatementList::print(raw_ostream& os) const
 {
-	DumbAllocator pool;
-	AstContext context(pool);
+	AstContext context;
 	StatementPrintVisitor::print(context, os, *this, false);
 }
 

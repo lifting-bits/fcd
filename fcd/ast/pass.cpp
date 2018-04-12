@@ -39,7 +39,7 @@ unordered_set<Statement*> AstModulePass::getUsingStatements(Expression& expr)
 	return statements;
 }
 
-void AstModulePass::run(deque<unique_ptr<FunctionNode>>& fn)
+void AstModulePass::run(std::deque<FunctionNode>& fn)
 {
 	if (fn.size() > 0)
 	{
@@ -47,16 +47,16 @@ void AstModulePass::run(deque<unique_ptr<FunctionNode>>& fn)
 	}
 }
 
-void AstFunctionPass::doRun(deque<unique_ptr<FunctionNode>>& list)
+void AstFunctionPass::doRun(std::deque<FunctionNode>& list)
 {
-	for (unique_ptr<FunctionNode>& fn : list)
+	for (auto &fn : list)
 	{
-		if (runOnDeclarations || fn->hasBody())
+		if (runOnDeclarations || fn.hasBody())
 		{
-			PrettyStackTraceFormat runPass("Running AST pass \"%s\" on function \"%s\"", getName(), string(fn->getFunction().getName()).c_str());
+			PrettyStackTraceFormat runPass("Running AST pass \"%s\" on function \"%s\"", getName(), string(fn.getFunction().getName()).c_str());
 			
-			this->fn = fn.get();
-			doRun(*fn);
+			this->fn = &fn;
+			doRun(fn);
 		}
 	}
 }

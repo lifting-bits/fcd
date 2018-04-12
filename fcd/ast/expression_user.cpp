@@ -115,8 +115,7 @@ void ExpressionUser::print(raw_ostream& os) const
 	// However, I'd say that it's bad practice to create a whole new AstContext
 	// just to use StatementPrintVisitor. I'd be unhappy to see that kind of code
 	// outside of debug code.
-	DumbAllocator pool;
-	AstContext context(pool);
+	AstContext context;
 	StatementPrintVisitor::print(context, os, *this, false);
 }
 

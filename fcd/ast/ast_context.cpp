@@ -16,8 +16,6 @@
 
 #include <llvm/IR/InstVisitor.h>
 
-#include <deque>
-
 using namespace std;
 using namespace llvm;
 
@@ -99,11 +97,6 @@ namespace
 class InstToExpr : public llvm::InstVisitor<InstToExpr, Expression*>
 {
 	AstContext& ctx;
-	
-	DumbAllocator& pool()
-	{
-		return ctx.pool;
-	}
 	
 	Expression* valueFor(Value& value)
 	{
@@ -469,86 +462,63 @@ public:
 	}
 };
 
-template<>
-struct std::hash<pair<const ExpressionType*, size_t>>
-{
-	std::hash<const ExpressionType*> a;
-	std::hash<size_t> b;
-	
-	size_t operator()(const pair<const ExpressionType*, size_t>& pair) const
-	{
-		return a(pair.first) ^ b(pair.second);
-	}
-};
+VoidExpressionType& AstContext::TypeIndex::getVoid() { return voidType; }
 
-class AstContext::TypeIndex
+IntegerExpressionType& AstContext::TypeIndex::getIntegerType(bool isSigned, unsigned short numBits)
 {
-	VoidExpressionType voidType;
-	unordered_map<unsigned short, unique_ptr<IntegerExpressionType>> intTypes;
-	unordered_map<const ExpressionType*, unique_ptr<PointerExpressionType>> pointerTypes;
-	unordered_map<pair<const ExpressionType*, size_t>, unique_ptr<ArrayExpressionType>> arrayTypes;
+	auto key = static_cast<unsigned short>(((isSigned != false) << 15) | (numBits & 0x7fff));
+	if (intTypes.find(key) == intTypes.end())
+	{
+		intTypes[key] = IntegerExpressionType(isSigned, numBits);
+	}
 
-	// Function types and struct types are managed but not indexed.
-	deque<unique_ptr<ExpressionType>> unindexedTypes;
-	
-public:
-	VoidExpressionType& getVoid() { return voidType; }
-	
-	IntegerExpressionType& getIntegerType(bool isSigned, unsigned short numBits)
+	return intTypes[key];	
+}
+
+PointerExpressionType& AstContext::TypeIndex::getPointerTo(const ExpressionType& pointee)
+{
+	if (pointerTypes.find(&pointee) == pointerTypes.end())
 	{
-		unsigned short key = static_cast<unsigned short>(((isSigned != false) << 15) | (numBits & 0x7fff));
-		auto& ptr = intTypes[key];
-		if (ptr == nullptr)
-		{
-			ptr.reset(new IntegerExpressionType(isSigned, numBits));
-		}
-		return *ptr;
+		pointerTypes.emplace(&pointee, PointerExpressionType(pointee));
+	}
+
+	return pointerTypes[&pointee];	
+}
+
+ArrayExpressionType& AstContext::TypeIndex::getArrayOf(const ExpressionType& elementType, size_t numElements)
+{
+	std::pair<const ExpressionType*, size_t> key(&elementType, numElements);
+	if (arrayTypes.find(key) == arrayTypes.end())
+	{
+		arrayTypes.emplace(key, ArrayExpressionType(elementType, numElements));
 	}
 	
-	PointerExpressionType& getPointerTo(const ExpressionType& pointee)
-	{
-		auto& ptr = pointerTypes[&pointee];
-		if (ptr == nullptr)
-		{
-			ptr.reset(new PointerExpressionType(pointee));
-		}
-		return *ptr;
-	}
-	
-	ArrayExpressionType& getArrayOf(const ExpressionType& elementType, size_t numElements)
-	{
-		pair<const ExpressionType*, size_t> key(&elementType, numElements);
-		auto& ptr = arrayTypes[key];
-		if (ptr == nullptr)
-		{
-			ptr.reset(new ArrayExpressionType(elementType, numElements));
-		}
-		return *ptr;
-	}
-	
-	StructExpressionType& getStructure(string name)
-	{
-		unindexedTypes.emplace_back(new StructExpressionType(name));
-		return llvm::cast<StructExpressionType>(*unindexedTypes.back());
-	}
-	
-	FunctionExpressionType& getFunction(const ExpressionType& returnType)
-	{
-		unindexedTypes.emplace_back(new FunctionExpressionType(returnType));
-		return llvm::cast<FunctionExpressionType>(*unindexedTypes.back());
-	}
-	
-	size_t size() const
-	{
-		return 1 + intTypes.size() + pointerTypes.size() + arrayTypes.size() + unindexedTypes.size();
-	}
-};
+	return arrayTypes[key];
+}
+
+StructExpressionType& AstContext::TypeIndex::getStructure(std::string name)
+{
+	structTypes.emplace_back(name);
+	return structTypes.back();
+}
+
+FunctionExpressionType& AstContext::TypeIndex::getFunction(const ExpressionType& returnType)
+{
+	functionTypes.emplace_back(returnType);
+	return functionTypes.back();
+}
+
+size_t AstContext::TypeIndex::size() const
+{
+	return 1 + intTypes.size() + pointerTypes.size() + arrayTypes.size() + structTypes.size() + functionTypes.size();
+}
 
 void* AstContext::prepareStorageAndUses(unsigned useCount, size_t storage)
 {
 	size_t useDataSize = sizeof(ExpressionUseArrayHead) + sizeof(ExpressionUse) * useCount;
 	size_t totalSize = useDataSize + storage;
-	auto pointer = pool.allocateDynamic<char>(totalSize, alignof(void*));
+	// TODO(msurovic): This needs to be managed !
+	auto pointer = new char[totalSize];
 	
 	// Prepare use data
 	auto nextUseArray = reinterpret_cast<ExpressionUseArrayHead*>(pointer);
@@ -584,10 +554,9 @@ void* AstContext::prepareStorageAndUses(unsigned useCount, size_t storage)
 	return objectStorage;
 }
 
-AstContext::AstContext(DumbAllocator& pool, Module* module)
-: pool(pool)
-, module(module)
-, types(new TypeIndex)
+AstContext::AstContext(/*DumbAllocator& pool,*/ Module* module)
+: /*pool(pool),*/
+  module(module)
 {
 	trueExpr = token(getIntegerType(false, 1), "true");
 	falseExpr = token(getIntegerType(false, 1), "false");
@@ -620,10 +589,6 @@ AstContext::AstContext(DumbAllocator& pool, Module* module)
 		const auto& trapAstType = getPointerTo(getType(*trapType));
 		trapToken = token(trapAstType, "__builtin_trap");
 	}
-}
-
-AstContext::~AstContext()
-{
 }
 
 Expression* AstContext::uncachedExpressionFor(llvm::Value& value)
@@ -705,11 +670,13 @@ Expression* AstContext::negate(NOT_NULL(Expression) expr)
 	
 	if (auto token = dyn_cast<TokenExpression>(expr))
 	{
-		if (strcmp(token->token, "true") == 0)
+		// if (strcmp(token->token, "true") == 0)
+		if (token->token == "true")
 		{
 			return expressionForFalse();
 		}
-		if (strcmp(token->token, "false") == 0)
+		// if (strcmp(token->token, "false") == 0)
+		if (token->token == "false")
 		{
 			return expressionForTrue();
 		}
@@ -802,30 +769,30 @@ const ExpressionType& AstContext::getType(Type &type)
 
 const VoidExpressionType& AstContext::getVoid()
 {
-	return types->getVoid();
+	return types.getVoid();
 }
 
 const IntegerExpressionType& AstContext::getIntegerType(bool isSigned, unsigned short numBits)
 {
-	return types->getIntegerType(isSigned, numBits);
+	return types.getIntegerType(isSigned, numBits);
 }
 
 const PointerExpressionType& AstContext::getPointerTo(const ExpressionType& pointee)
 {
-	return types->getPointerTo(pointee);
+	return types.getPointerTo(pointee);
 }
 
 const ArrayExpressionType& AstContext::getArrayOf(const ExpressionType& elementType, size_t numElements)
 {
-	return types->getArrayOf(elementType, numElements);
+	return types.getArrayOf(elementType, numElements);
 }
 
 StructExpressionType& AstContext::createStructure(string name)
 {
-	return types->getStructure(move(name));
+	return types.getStructure(move(name));
 }
 
 FunctionExpressionType& AstContext::createFunction(const ExpressionType &returnType)
 {
-	return types->getFunction(returnType);
+	return types.getFunction(returnType);
 }

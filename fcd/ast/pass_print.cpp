@@ -12,7 +12,7 @@
 using namespace llvm;
 using namespace std;
 
-void AstPrint::doRun(deque<std::unique_ptr<FunctionNode>> &functions)
+void AstPrint::doRun(std::deque<FunctionNode> &functions)
 {
 	for (const auto& file : includes)
 	{
@@ -24,11 +24,11 @@ void AstPrint::doRun(deque<std::unique_ptr<FunctionNode>> &functions)
 		output << '\n';
 	}
 	
-	for (unique_ptr<FunctionNode>& fn : functions)
+	for (auto &fn : functions)
 	{
-		if (!fn->getBody().empty())
+		if (!fn.getBody().empty())
 		{
-			fn->print(output);
+			fn.print(output);
 		}
 	}
 }

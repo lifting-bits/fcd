@@ -20,12 +20,12 @@ namespace
 		auto iter = begin;
 		if (iter != end)
 		{
-			iter->type.print(os);
+			iter->type->print(os);
 			os << ' ' << iter->name;
 			for (++iter; iter != end; ++iter)
 			{
 				os << ", ";
-				iter->type.print(os);
+				iter->type->print(os);
 				os << ' ' << iter->name;
 			}
 		}
@@ -49,13 +49,13 @@ void IntegerExpressionType::print(llvm::raw_ostream& os) const
 
 void PointerExpressionType::print(llvm::raw_ostream& os) const
 {
-	nested.print(os);
+	nested->print(os);
 	os << '*';
 }
 
 void ArrayExpressionType::print(llvm::raw_ostream& os) const
 {
-	nested.print(os);
+	nested->print(os);
 	os << '[' << numElement << ']';
 }
 
@@ -68,7 +68,7 @@ void StructExpressionType::print(llvm::raw_ostream& os) const
 
 void FunctionExpressionType::print(llvm::raw_ostream& os) const
 {
-	returnType.print(os);
+	returnType->print(os);
 	os << '(';
 	printRange(os, begin(), end());
 	os << ')';

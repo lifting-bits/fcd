@@ -23,7 +23,7 @@ class AstPrint final : public AstModulePass
 	std::vector<std::string> includes;
 	
 protected:
-	virtual void doRun(std::deque<std::unique_ptr<FunctionNode>>& functions) override;
+	virtual void doRun(std::deque<FunctionNode>& functions) override;
 	
 public:
 	AstPrint(llvm::raw_ostream& output, std::vector<std::string> includes)

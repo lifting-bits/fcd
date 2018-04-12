@@ -22,6 +22,7 @@ class ExpressionType
 public:
 	enum Type
 	{
+		Invalid,
 		Void,
 		Integer,
 		Pointer,
@@ -34,6 +35,11 @@ private:
 	Type type;
 	
 public:
+	ExpressionType()
+	: type(Invalid)
+	{
+	}
+	
 	ExpressionType(Type type)
 	: type(type)
 	{
@@ -75,11 +81,16 @@ public:
 		return that->getType() == Integer;
 	}
 	
+	IntegerExpressionType()
+	: ExpressionType(Invalid)
+	{
+	}
+	
 	IntegerExpressionType(bool hasSign, unsigned short numBits)
 	: ExpressionType(Integer), hasSign(hasSign), numBits(numBits)
 	{
 	}
-	
+
 	bool isSigned() const { return hasSign; }
 	unsigned short getBits() const { return numBits; }
 	virtual void print(llvm::raw_ostream& os) const override;
@@ -87,7 +98,7 @@ public:
 
 class PointerExpressionType : public ExpressionType
 {
-	const ExpressionType& nested;
+	const ExpressionType* nested;
 	
 public:
 	static bool classof(const ExpressionType* that)
@@ -95,18 +106,23 @@ public:
 		return that->getType() == Pointer;
 	}
 	
-	PointerExpressionType(const ExpressionType& toWhat)
-	: ExpressionType(Pointer), nested(toWhat)
+	PointerExpressionType()
+	: ExpressionType(Invalid), nested(nullptr)
 	{
 	}
 	
-	const ExpressionType& getNestedType() const { return nested; }
+	PointerExpressionType(const ExpressionType& toWhat)
+	: ExpressionType(Pointer), nested(&toWhat)
+	{
+	}
+	
+	const ExpressionType& getNestedType() const { return *nested; }
 	virtual void print(llvm::raw_ostream& os) const override;
 };
 
 class ArrayExpressionType : public ExpressionType
 {
-	const ExpressionType& nested;
+	const ExpressionType* nested;
 	size_t numElement;
 	
 public:
@@ -115,23 +131,33 @@ public:
 		return that->getType() == Array;
 	}
 	
-	ArrayExpressionType(const ExpressionType& nested, size_t size)
-	: ExpressionType(Array), nested(nested), numElement(size)
+	ArrayExpressionType()
+	: ExpressionType(Invalid), nested(nullptr), numElement(0)
 	{
 	}
 	
-	const ExpressionType& getNestedType() const { return nested; }
+	ArrayExpressionType(const ExpressionType& nested, size_t size)
+	: ExpressionType(Array), nested(&nested), numElement(size)
+	{
+	}
+
+	const ExpressionType& getNestedType() const { return *nested; }
 	size_t size() const { return numElement; }
 	virtual void print(llvm::raw_ostream& os) const override;
 };
 
 struct ExpressionTypeField
 {
-	const ExpressionType& type;
+	const ExpressionType* type;
 	std::string name;
 	
+	ExpressionTypeField()
+	: type(nullptr), name("")
+	{
+	}
+
 	ExpressionTypeField(const ExpressionType& type, std::string name)
-	: type(type), name(name)
+	: type(&type), name(name)
 	{
 	}
 };
@@ -147,6 +173,11 @@ public:
 	static bool classof(const ExpressionType* that)
 	{
 		return that->getType() == Structure;
+	}
+	
+	StructExpressionType()
+	: ExpressionType(Invalid), name("")
+	{
 	}
 	
 	StructExpressionType(std::string name)
@@ -172,7 +203,7 @@ public:
 
 class FunctionExpressionType : public ExpressionType
 {
-	const ExpressionType& returnType;
+	const ExpressionType* returnType;
 	std::vector<ExpressionTypeField> parameters;
 	
 public:
@@ -183,12 +214,17 @@ public:
 		return that->getType() == Function;
 	}
 	
-	explicit FunctionExpressionType(const ExpressionType& returnType)
-	: ExpressionType(Function), returnType(returnType)
+	FunctionExpressionType()
+	: ExpressionType(Invalid), returnType(nullptr)
 	{
 	}
 	
-	const ExpressionType& getReturnType() const { return returnType; }
+	FunctionExpressionType(const ExpressionType& returnType)
+	: ExpressionType(Function), returnType(&returnType)
+	{
+	}
+	
+	const ExpressionType& getReturnType() const { return *returnType; }
 	const_iterator begin() const { return parameters.begin(); }
 	const_iterator end() const { return parameters.end(); }
 	

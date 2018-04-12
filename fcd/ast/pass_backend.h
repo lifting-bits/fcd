@@ -8,18 +8,14 @@
 //
 
 //
-// The algorithm used here is based off K. Yakdan, S. Eschweiler, E. Gerhards-Padilla
-// and M. Smith's research paper "No More Gotos", accessible from the Internet Society's website:
+// The algorithm used here is based off K. Yakdan, S. Eschweiler, E.
+// Gerhards-Padilla and M. Smith's research paper "No More Gotos", accessible
+// from the Internet Society's website:
 // http://www.internetsociety.org/doc/no-more-gotos-decompilation-using-pattern-independent-control-flow-structuring-and-semantics
 //
 
-#ifndef fcd__ast_pass_backend_h
-#define fcd__ast_pass_backend_h
-
-#include "dumb_allocator.h"
-#include "function.h"
-#include "pass.h"
-#include "statements.h"
+#ifndef FCD_AST_PASS_BACKEND_H_
+#define FCD_AST_PASS_BACKEND_H_
 
 #include <llvm/Analysis/DominanceFrontier.h>
 #include <llvm/Analysis/PostDominators.h>
@@ -33,38 +29,40 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "function.h"
+#include "pass.h"
+#include "statements.h"
+
 class PreAstContext;
 
 // XXX Make this a legit LLVM backend?
 // Doesn't sound like a bad idea, but I don't really know where to start.
-class AstBackEnd final : public llvm::ModulePass
-{
-	std::unique_ptr<PreAstContext> blockGraph;
-	std::deque<std::unique_ptr<FunctionNode>> outputNodes;
-	std::deque<std::unique_ptr<AstModulePass>> passes;
-	FunctionNode* output;
-	
-	inline DumbAllocator& pool() { return output->getPool(); }
-	
-	void runOnFunction(llvm::Function& fn);
-	
-public:
-	static char ID;
-	
-	AstBackEnd();
-	~AstBackEnd();
-	
-	inline virtual llvm::StringRef getPassName() const override
-	{
-		return "AST Back-End";
-	}
-	
-	virtual void getAnalysisUsage(llvm::AnalysisUsage &au) const override;
-	virtual bool runOnModule(llvm::Module& m) override;
-	
-	void addPass(AstModulePass* pass);
+class AstBackEnd : public llvm::ModulePass {
+ private:
+  std::unique_ptr<PreAstContext> blockGraph;
+  std::deque<FunctionNode> nodes;
+  std::deque<std::unique_ptr<AstModulePass>> passes;
+  FunctionNode *output;
+
+  void runOnFunction(llvm::Function &func);
+
+ public:
+  static char ID;
+
+  AstBackEnd(void);
+
+  llvm::StringRef getPassName(void) const override { return "AST Back-End"; }
+
+  void getAnalysisUsage(llvm::AnalysisUsage &usage) const override;
+  bool runOnModule(llvm::Module &module) override;
+
+  void addPass(AstModulePass *pass);
 };
 
-AstBackEnd* createAstBackEnd();
+AstBackEnd *createAstBackEnd(void);
 
-#endif /* fcd__ast_pass_backend_h */
+namespace llvm {
+void initializeAstBackEndPass(PassRegistry &);
+}
+
+#endif  // FCD_AST_PASS_BACKEND_H_

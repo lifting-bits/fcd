@@ -17,7 +17,6 @@
 
 #include <llvm/Support/raw_os_ostream.h>
 
-#include <cstring>
 #include <deque>
 #include <unordered_set>
 
@@ -244,7 +243,9 @@ const std::string& MemberAccessExpression::getFieldName() const
 
 const ExpressionType& MemberAccessExpression::getExpressionType(AstContext&) const
 {
-	return structureType[fieldIndex].type;
+	auto type = structureType[fieldIndex].type;
+	CHECK(type != nullptr);
+	return *type;
 }
 
 bool MemberAccessExpression::operator==(const Expression &that) const
@@ -278,7 +279,7 @@ bool NumericExpression::operator==(const Expression& that) const
 
 
 TokenExpression::TokenExpression(AstContext& ctx, unsigned uses, const ExpressionType& type, llvm::StringRef token)
-: Expression(Token, ctx, uses), expressionType(type), token(ctx.getPool().copyString(token))
+: Expression(Token, ctx, uses), expressionType(type), token(/*ctx.getPool().copyString(token)*/token.str())
 {
 	CHECK(uses == 0);
 	CHECK(token.size() > 0 && token[0] != '\0');
@@ -288,7 +289,7 @@ bool TokenExpression::operator==(const Expression& that) const
 {
 	if (auto token = llvm::dyn_cast<TokenExpression>(&that))
 	{
-		return strcmp(this->token, token->token) == 0;
+		return this->token == token->token;
 	}
 	return false;
 }
@@ -366,7 +367,7 @@ bool SubscriptExpression::operator==(const Expression& that) const
 AssemblyExpression::AssemblyExpression(AstContext& ctx, unsigned uses, const FunctionExpressionType& type, StringRef assembly)
 : Expression(Assembly, ctx, uses)
 , expressionType(ctx.getPointerTo(type))
-, assembly(ctx.getPool().copyString(assembly))
+, assembly(assembly.str())
 {
 	CHECK(uses == 0);
 }
@@ -375,7 +376,8 @@ bool AssemblyExpression::operator==(const Expression& that) const
 {
 	if (auto thatAsm = dyn_cast<AssemblyExpression>(&that))
 	{
-		return strcmp(assembly, thatAsm->assembly) == 0;
+		return assembly == thatAsm->assembly;
+		// return strcmp(assembly, thatAsm->assembly) == 0;
 	}
 	return false;
 }
@@ -383,7 +385,7 @@ bool AssemblyExpression::operator==(const Expression& that) const
 AssignableExpression::AssignableExpression(AstContext& ctx, unsigned uses, const ExpressionType& type, StringRef prefix, bool addressable)
 : Expression(Assignable, ctx, uses)
 , expressionType(type)
-, prefix(ctx.getPool().copyString(prefix))
+, prefix(prefix.str())
 , addressable(addressable)
 {
 	CHECK(uses == 0);
@@ -394,7 +396,7 @@ bool AssignableExpression::operator==(const Expression& that) const
 	if (auto thatAssignable = dyn_cast<AssignableExpression>(&that))
 	{
 		return &expressionType == &thatAssignable->expressionType
-			&& strcmp(prefix, thatAssignable->prefix) == 0;
+			&& prefix == thatAssignable->prefix;
 	}
 	return false;
 }

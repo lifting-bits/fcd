@@ -95,7 +95,7 @@ void CTypePrinter::print(raw_ostream& os, const StructExpressionType& structTy, 
 			os << ' ';
 			for (auto iter = structTy.begin(); iter != structTy.end(); ++iter)
 			{
-				print(os, iter->type, iter->name);
+				print(os, *iter->type, iter->name);
 				os << "; ";
 			}
 		}
@@ -113,11 +113,11 @@ void CTypePrinter::print(raw_ostream& os, const FunctionExpressionType& funcTy, 
 	auto iter = funcTy.begin();
 	if (iter != funcTy.end())
 	{
-		print(rs, iter->type, iter->name);
+		print(rs, *iter->type, iter->name);
 		for (++iter; iter != funcTy.end(); ++iter)
 		{
 			rs << ", ";
-			print(rs, iter->type, iter->name);
+			print(rs, *iter->type, iter->name);
 		}
 	}
 	

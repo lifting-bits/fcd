@@ -345,7 +345,7 @@ struct NumericExpression final : public Expression
 struct TokenExpression final : public Expression
 {
 	const ExpressionType& expressionType;
-	NOT_NULL(const char) token;
+	const std::string token;
 	
 	static bool classof(const ExpressionUser* node)
 	{
@@ -480,7 +480,7 @@ struct SubscriptExpression final : public Expression
 struct AssemblyExpression final : public Expression
 {
 	const PointerExpressionType& expressionType;
-	NOT_NULL(const char) assembly;
+	const std::string assembly;
 	
 	static bool classof(const ExpressionUser* node)
 	{
@@ -497,7 +497,8 @@ struct AssemblyExpression final : public Expression
 struct AssignableExpression final : public Expression
 {
 	const ExpressionType& expressionType;
-	NOT_NULL(const char) prefix;
+	const std::string prefix;
+	
 	bool addressable;
 	
 	static bool classof(const ExpressionUser* node)

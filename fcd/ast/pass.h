@@ -19,14 +19,14 @@
 class AstModulePass
 {
 protected:
-	virtual void doRun(std::deque<std::unique_ptr<FunctionNode>>& functions) = 0;
+	virtual void doRun(std::deque<FunctionNode>& functions) = 0;
 	
 	// Helper functions.
 	static std::unordered_set<Statement*> getUsingStatements(Expression& expr);
 	
 public:
 	virtual const char* getName() const = 0;
-	void run(std::deque<std::unique_ptr<FunctionNode>>& functions);
+	void run(std::deque<FunctionNode>& functions);
 	virtual ~AstModulePass() = default;
 };
 
@@ -38,7 +38,7 @@ class AstFunctionPass : public AstModulePass
 protected:
 	AstContext& context() { return fn->getContext(); }
 	
-	virtual void doRun(std::deque<std::unique_ptr<FunctionNode>>& function) override final;
+	virtual void doRun(std::deque<FunctionNode> &function) override final;
 	virtual void doRun(FunctionNode& function) = 0;
 	
 public:

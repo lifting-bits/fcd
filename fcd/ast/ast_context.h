@@ -19,6 +19,7 @@
 #include "not_null.h"
 #include "statements.h"
 
+#include <deque>
 #include <memory>
 #include <unordered_map>
 #include <utility>
@@ -36,16 +37,47 @@ namespace llvm
 class Expression;
 class ExpressionUser;
 
+template<>
+struct std::hash<std::pair<const ExpressionType*, size_t>>
+{
+	std::hash<const ExpressionType*> a;
+	std::hash<size_t> b;
+
+	size_t operator()(const std::pair<const ExpressionType*, size_t>& pair) const
+	{
+		return a(pair.first) ^ b(pair.second);
+	}
+};
+
 class AstContext
 {
 	friend class InstToExpr;
-	class TypeIndex;
+
+	class TypeIndex
+	{
+		VoidExpressionType voidType;
+		std::unordered_map<unsigned short, IntegerExpressionType> intTypes;
+		std::unordered_map<const ExpressionType*, PointerExpressionType> pointerTypes;
+		std::unordered_map<std::pair<const ExpressionType*, size_t>, ArrayExpressionType> arrayTypes;
+		// Function types and struct types are managed but not indexed.
+		std::deque<StructExpressionType> structTypes;
+		std::deque<FunctionExpressionType> functionTypes;
+
+	public:
+		VoidExpressionType& getVoid();
+		IntegerExpressionType& getIntegerType(bool isSigned, unsigned short numBits);
+		PointerExpressionType& getPointerTo(const ExpressionType& pointee);
+		ArrayExpressionType& getArrayOf(const ExpressionType& elementType, size_t numElements);
+		StructExpressionType& getStructure(std::string name);
+		FunctionExpressionType& getFunction(const ExpressionType& returnType);
+		size_t size() const;
+	};
 	
-	DumbAllocator& pool;
+	// DumbAllocator& pool;
 	llvm::Module* module;
 	std::unordered_map<Expression*, Expression*> phiReadsToWrites;
 	std::unordered_map<llvm::Value*, Expression*> expressionMap;
-	std::unique_ptr<TypeIndex> types;
+	TypeIndex types;
 	std::unordered_map<const llvm::StructType*, StructExpressionType*> structTypeMap;
 	
 	ExpressionReference trueExpr;
@@ -79,26 +111,36 @@ class AstContext
 	T* allocate(unsigned useCount, TArgs&&... args)
 	{
 		CHECK(HasUses || useCount == 0);
-		void* result = HasUses
-			? prepareStorageAndUses(useCount, sizeof(T))
-			: pool.allocateDynamic<char>(sizeof(T), alignof(T));
-		return new (result) T(*this, useCount, std::forward<TArgs>(args)...);
+		
+		if (HasUses)
+		{
+			void* res = prepareStorageAndUses(useCount, sizeof(T));
+			return new (res) T(*this, useCount, std::forward<TArgs>(args)...);
+		}
+		else
+		{
+			// TODO(msurovic): this needs to be managed !
+			return new T(*this, useCount, std::forward<TArgs>(args)...);
+		}
 	}
 	
 	template<typename T, typename... TArgs, typename = typename std::enable_if<std::is_base_of<Statement, T>::value, T>::type>
 	T* allocateStatement(unsigned useCount, TArgs&&... args)
 	{
-		void* result = useCount == 0
-			? pool.allocateDynamic<char>(sizeof(T), alignof(T))
-			: prepareStorageAndUses(useCount, sizeof(T));
-		return new (result) T(std::forward<TArgs>(args)...);
+		if (useCount != 0)
+		{
+			void* res = prepareStorageAndUses(useCount, sizeof(T));
+			return new (res) T(std::forward<TArgs>(args)...); 
+		}
+		else
+		{
+			// TODO(msurovic): this needs to be managed !
+			return new T(std::forward<TArgs>(args)...);
+		}
 	}
 	
 public:
-	AstContext(DumbAllocator& pool, llvm::Module* module = nullptr);
-	~AstContext();
-	
-	DumbAllocator& getPool() { return pool; }
+	AstContext(llvm::Module* module = nullptr);
 	
 	Expression* expressionFor(llvm::Value& value);
 	Expression* expressionForTrue() { return trueExpr.get(); }

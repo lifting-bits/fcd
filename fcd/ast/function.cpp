@@ -23,9 +23,9 @@ using namespace std;
 
 void FunctionNode::print(llvm::raw_ostream &os)
 {
-	const ExpressionType& returnType = context.getType(*function.getReturnType());
+	const ExpressionType& returnType = context.getType(*function->getReturnType());
 	FunctionExpressionType& functionType = context.createFunction(returnType);
-	for (Argument& arg : function.args())
+	for (Argument& arg : function->args())
 	{
 		string argName = arg.getName();
 		if (argName.size() == 0 || argName[0] == '\0')
@@ -34,7 +34,7 @@ void FunctionNode::print(llvm::raw_ostream &os)
 		}
 		functionType.append(context.getType(*arg.getType()), argName);
 	}
-	StatementPrintVisitor::declare(os, functionType, function.getName());
+	StatementPrintVisitor::declare(os, functionType, function->getName());
 	
 	if (hasBody())
 	{

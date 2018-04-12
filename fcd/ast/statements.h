@@ -84,6 +84,7 @@ public:
 	{
 	}
 	
+	StatementList(Statement* parent, const StatementList& that);
 	StatementList(Statement* parent, StatementList&& that);
 	StatementList(Statement* parent, std::initializer_list<Statement*> statements);
 	
@@ -150,6 +151,16 @@ public:
 	
 	StatementReference(StatementReference&& that)
 	: list(nullptr, std::move(that.list))
+	{
+	}
+
+	StatementReference(StatementReference& that)
+	: list(nullptr, that.list)
+	{
+	}
+
+	StatementReference(const StatementReference& that)
+	: list(nullptr, that.list)
 	{
 	}
 	
