@@ -193,10 +193,12 @@ Expression* createDisjunction(AstContext& ctx, TIter begin, TIter end) {
             expressions.erase(
                 remove(expressions.begin(), expressions.end(), subExpression));
           }
-          auto expression =
-              ctx.nary(NAryOperatorExpression::ShortCircuitAnd,
-                       expressions.begin(), expressions.end(), true);
-          remainingConjunctions.push_back(expression);
+          if (expressions.end() > expressions.begin()) {
+            auto expression =
+                ctx.nary(NAryOperatorExpression::ShortCircuitAnd,
+                         expressions.begin(), expressions.end(), true);
+            remainingConjunctions.push_back(expression);
+          }
         }
         commonSubExpressions.push_back(createDisjunction(
             ctx, remainingConjunctions.begin(), remainingConjunctions.end()));
@@ -311,7 +313,6 @@ class Structurizer {
     SmallDenseMap<PreAstBasicBlock*,
                   SmallVector<SmallVector<Expression*, 4>, 8>>
         reachingConditions;
-
     // Do we have loops?
     bool isLoop = false;
     SmallPtrSet<PreAstBasicBlock*, 16> memberBlocks;
@@ -328,7 +329,6 @@ class Structurizer {
         }
       }
     }
-
     // Add break statements to loops if necessary.
     if (isLoop) {
       PreAstBasicBlock* loopExit = nullptr;
@@ -352,14 +352,12 @@ class Structurizer {
         }
       }
     }
-
     // Fold blocks.
     for (PreAstBasicBlock* bb : make_range(begin, end)) {
       // Create reaching condition and insert block in larger sequence.
       auto result = reachingConditions.insert({bb, {}});
       CHECK(result.second);
       (void)result;
-
       auto& disjunction = result.first->second;
       for (auto predEdge : bb->predecessors) {
         // Only consider the edge condition for blocks that we have visited
@@ -391,7 +389,6 @@ class Structurizer {
           }
         }
       }
-
       StatementReference statementToInsert = move(bb->blockStatement).take();
       if (disjunction.size() > 0) {
         // Collect common condition prefix and suffix.
@@ -409,13 +406,11 @@ class Structurizer {
                        orIter->rbegin(), orIter->rend(), derefEqual);
           commonSuffix.erase(commonSuffix.begin(), suffixMismatch.first.base());
         }
-
         if (commonPrefix.size() == disjunction.front().size()) {
           // Identical condition, clear commonSuffix so that we don't duplicate
           // anything.
           commonSuffix.clear();
         }
-
         // Create OR-joined condition with condition parts after the prefix.
         SmallVector<Expression*, 4> disjunctionTerms;
         for (auto& andSequence : disjunction) {
@@ -423,7 +418,7 @@ class Structurizer {
             auto copyBegin = andSequence.begin() + commonPrefix.size();
             auto copyEnd = andSequence.end() - commonSuffix.size();
             auto copySize = copyEnd - copyBegin;
-            if (copySize != 0) {
+            if (copySize > 0) {
               Expression* subsequence = ctx.nary(
                   NAryOperatorExpression::ShortCircuitAnd, copyBegin, copyEnd);
               disjunctionTerms.push_back(subsequence);
@@ -451,10 +446,8 @@ class Structurizer {
               ctx.ifElse(term, move(statementToInsert).take())};
         }
       }
-
       resultSequence->push_back(move(statementToInsert).take());
     }
-
     if (isLoop) {
       resultSequence = {ctx.loop(ctx.expressionForTrue(),
                                  LoopStatement::PreTested,
@@ -526,11 +519,9 @@ class Structurizer {
         dfsStack.emplace_back(*edge->to);
       }
     }
-
     if (loopNodes.size() == 0) {
       return foldBasicBlocks(entry, exit);
     }
-
     // The loop successor refinement phase has questionable results on lots of
     // programs, and it's really messy if you want deterministic output. Revisit
     // later if necessary.
@@ -620,7 +611,6 @@ class Structurizer {
   bool reduceRegion(PreAstBasicBlock* exit) {
     size_t regionSize = 0;
     PreAstBasicBlock* entry = blocksInReversePostOrder.front();
-
     // As it turns out, cycles in the blocks list can cause nodes belonging to a
     // single region to *not* be contiguous. This function therefore rearranges
     // blocks as necessary.
@@ -650,7 +640,6 @@ class Structurizer {
         return false;
       }
     }
-
     entry->blockStatement =
         splitAndFoldRegion(blocksInReversePostOrder.begin(), regionEnd);
 
@@ -666,7 +655,6 @@ class Structurizer {
       }
       block->successors.clear();
     }
-
     // Merge outgoing edges to the same block into one single edge with 'true'
     // as the condition.
     if (exit != nullptr) {
@@ -685,11 +673,9 @@ class Structurizer {
       entry->successors.push_back(&newExitEdge);
       exit->predecessors.push_back(&newExitEdge);
     }
-
     auto beginErase = blocksInReversePostOrder.begin();
     ++beginErase;
     blocksInReversePostOrder.erase(beginErase, regionEnd);
-
     return true;
   }
 
@@ -746,9 +732,9 @@ void AstBackEnd::getAnalysisUsage(llvm::AnalysisUsage& usage) const {
 }
 
 void AstBackEnd::runOnFunction(llvm::Function& func) {
-  // Create AST block graph.  
+  // Create AST block graph.
   nodes.emplace_back(func);
-  auto &node = nodes.back();
+  auto& node = nodes.back();
   blockGraph.reset(new PreAstContext(node.getContext()));
   blockGraph->generateBlocks(func);
 
@@ -774,7 +760,6 @@ bool AstBackEnd::runOnModule(llvm::Module& module) {
       runOnFunction(func);
     }
   }
-
   // run passes
   for (auto& pass : passes) {
     pass->run(nodes);

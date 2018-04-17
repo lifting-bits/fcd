@@ -139,7 +139,7 @@ namespace
 					expressions.push_back(trueTerm);
 				}
 			}
-			
+
 			return ctx.nary(nary.getType(), expressions.begin(), expressions.end());
 		}
 		
@@ -185,35 +185,30 @@ namespace
 		
 		void visitNAryOperator(NAryOperatorExpression& nary)
 		{
-			ExpressionReference naryRef = &nary;
-			
 			// Negation distribution kills term collection, so do that first before visiting child nodes
 			Expression* result = removeIdenticalTerms(nary);
 			for (ExpressionUse& use : result->operands())
 			{
 				visit(*use.getUse());
 			}
-			
-			if (result != &nary)
+
+			if (*result != nary)
 			{
-				bool needsRevisiting = result == ctx.expressionForTrue() || result == ctx.expressionForFalse();
-				while (!nary.uses_empty())
+				nary.replaceAllUsesWith(result);
+				nary.dropAllReferences();
+				
+				// Re-visit expressions if we detected a tautology/contradiction.
+				if (result == ctx.expressionForTrue() || result == ctx.expressionForFalse())
 				{
-					auto& front = *nary.uses_begin();
-					front.setUse(result);
-					
-					// Re-visit expressions if we detected a tautology/contradiction.
-					if (needsRevisiting)
+					for (auto& use : result->uses())
 					{
-						auto user = front.getUser();
+						auto user = use.getUser();
 						if (isa<Expression>(user) && visitedExpressions.erase(user))
 						{
 							visit(*user);
 						}
 					}
 				}
-				
-				nary.dropAllReferences();
 			}
 		}
 		
@@ -301,6 +296,7 @@ namespace
 		ExpressionSimplifierVisitor exprVisitor;
 		
 	public:
+
 		StatementSimplifierVisitor(AstContext& ctx)
 		: exprVisitor(ctx)
 		{
@@ -308,7 +304,8 @@ namespace
 		
 		void visitIfElse(IfElseStatement& ifElse)
 		{
-			exprVisitor.visit(*ifElse.getCondition());
+			auto cond = ifElse.getCondition();
+			exprVisitor.visit(*cond);
 			for (Statement* stmt : ifElse.getIfBody())
 			{
 				visit(*stmt);

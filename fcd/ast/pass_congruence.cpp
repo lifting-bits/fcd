@@ -132,7 +132,8 @@ void AstMergeCongruentVariables::doRun(FunctionNode &fn)
 		auto iter = memoryOperations.upper_bound(memoryOperationStatement);
 		if (iter == memoryOperations.end() || *iter >= firstUseLocation)
 		{
-			CHECK(cast<ExpressionStatement>(declaration)->getExpression() == expr);
+			// CHECK(cast<ExpressionStatement>(declaration)->getExpression() == expr);
+			
 			// However, the transformation is only valid if the definition and the use have the same reaching condition:
 			// for instance, in `a = foo(); if (bar) puts(a);` is not the same as `if (bar) puts(foo())`, since in the
 			// first case `foo()` is called unconditionally.

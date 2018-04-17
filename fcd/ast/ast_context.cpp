@@ -103,7 +103,7 @@ class InstToExpr : public llvm::InstVisitor<InstToExpr, Expression*>
 		return ctx.expressionFor(value);
 	}
 	
-	Expression* indexIntoElement(Module& module, Expression* base, Type* type, Value* index)
+	Expression* indexIntoElement(Expression* base, Type* type, Value* index)
 	{
 		if (type->isPointerTy() || type->isArrayTy())
 		{
@@ -143,11 +143,10 @@ public:
 		}
 		else if (auto constant = dyn_cast<Constant>(&val))
 		{
-			return visitConstant(*constant);;
+			return visitConstant(*constant);
 		}
 		else if (auto arg = dyn_cast<Argument>(&val))
 		{
-
 			string argName = arg->getName();
 			if (argName.size() == 0 || argName[0] == '\0')
 			{
@@ -174,13 +173,13 @@ public:
 			return ctx.uncachedExpressionFor(*asInst);
 		}
 		
-		if (auto structure = dyn_cast<ConstantStruct>(&constant))
+		if (auto aggregate = dyn_cast<ConstantAggregate>(&constant))
 		{
-			auto items = structure->getNumOperands();
-			auto agg = ctx.aggregate(ctx.getType(*structure->getType()), items);
+			auto items = aggregate->getNumOperands();
+			auto agg = ctx.aggregate(ctx.getType(*aggregate->getType()), items);
 			for (unsigned i = 0; i < items; ++i)
 			{
-				auto operand = structure->getAggregateElement(i);
+				auto operand = aggregate->getAggregateElement(i);
 				agg->setOperand(i, valueFor(*operand));
 			}
 			return agg;
@@ -190,7 +189,7 @@ public:
 		{
 			auto items = seqdata->getNumElements();
 			auto agg = ctx.aggregate(ctx.getType(*seqdata->getType()), items);
-			for (unsigned i = 0; i < items; ++i)
+			for (auto i = 0; i < items; ++i)
 			{
 				auto operand = seqdata->getElementAsConstant(i);
 				agg->setOperand(i, valueFor(*operand));
@@ -246,6 +245,7 @@ public:
 				return visitConstant(*globvar->getInitializer());
 			}
 		}
+
 		CHECK(false) << "Unexpected type of constant";
 	}
 	
@@ -409,8 +409,6 @@ public:
 	
 	VISIT(ExtractValueInst)
 	{
-		Module& module = *inst.getParent()->getParent()->getParent();
-		
 		auto i64 = Type::getInt64Ty(inst.getContext());
 		auto rawIndices = inst.getIndices();
 		Type* baseType = inst.getOperand(0)->getType();
@@ -419,14 +417,13 @@ public:
 		for (unsigned i = 0; i < rawIndices.size(); ++i)
 		{
 			Type* indexedType = ExtractValueInst::getIndexedType(baseType, rawIndices.slice(0, i));
-			result = indexIntoElement(module, result, indexedType, ConstantInt::get(i64, rawIndices[i]));
+			result = indexIntoElement(result, indexedType, ConstantInt::get(i64, rawIndices[i]));
 		}
 		return result;
 	}
 	
 	VISIT(GetElementPtrInst)
 	{
-		Module& module = *inst.getParent()->getParent()->getParent();
 		vector<Value*> indices;
 		copy(inst.idx_begin(), inst.idx_end(), back_inserter(indices));
 		
@@ -438,7 +435,7 @@ public:
 		for (unsigned i = 1; i < indices.size(); ++i)
 		{
 			Type* indexedType = GetElementPtrInst::getIndexedType(baseType, rawIndices.slice(0, i));
-			result = indexIntoElement(module, result, indexedType, indices[i]);
+			result = indexIntoElement(result, indexedType, indices[i]);
 		}
 		return ctx.unary(UnaryOperatorExpression::AddressOf, result);
 	}
@@ -515,11 +512,21 @@ size_t AstContext::TypeIndex::size() const
 
 void* AstContext::prepareStorageAndUses(unsigned useCount, size_t storage)
 {
+	auto allocate = [](size_t count, size_t align)
+	{
+		size_t total_size = 0;
+		CHECK(!__builtin_umull_overflow(count, sizeof(char), &total_size));
+		size_t req_size = 0;
+		CHECK(!__builtin_add_overflow(total_size, align - 1, &req_size));
+		void* bytes = new char[req_size];
+		std::align(align, req_size, bytes, total_size);
+		return new (static_cast<char*>(bytes)) char[count];
+	};
+	
 	size_t useDataSize = sizeof(ExpressionUseArrayHead) + sizeof(ExpressionUse) * useCount;
 	size_t totalSize = useDataSize + storage;
 	// TODO(msurovic): This needs to be managed !
-	auto pointer = new char[totalSize];
-	
+	auto pointer = allocate(totalSize, alignof(void*));
 	// Prepare use data
 	auto nextUseArray = reinterpret_cast<ExpressionUseArrayHead*>(pointer);
 	new (nextUseArray) ExpressionUseArrayHead;
@@ -554,8 +561,8 @@ void* AstContext::prepareStorageAndUses(unsigned useCount, size_t storage)
 	return objectStorage;
 }
 
-AstContext::AstContext(/*DumbAllocator& pool,*/ Module* module)
-: /*pool(pool),*/
+AstContext::AstContext(Module* module)
+: 
   module(module)
 {
 	trueExpr = token(getIntegerType(false, 1), "true");

@@ -353,6 +353,18 @@ const ExpressionType& SubscriptExpression::getExpressionType(AstContext& context
 	{
 		return arrayType->getNestedType();
 	}
+	else if (isa<StructExpressionType>(baseType))
+	{
+		// TODO(msurovic): Added for clang bitcode processing, unsure if
+		// this is correct. Seems to work though.
+		return *baseType;
+	}
+	else if (isa<IntegerExpressionType>(baseType))
+	{
+		// TODO(msurovic): Added for clang bitcode processing, unsure if
+		// this is correct. Seems to work though.
+		return *baseType;
+	}
 	else
 	{
 		CHECK(false) << "Don't know how to infer type";
