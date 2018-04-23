@@ -25,6 +25,7 @@ public:
 		Invalid,
 		Void,
 		Integer,
+		Double,
 		Pointer,
 		Array,
 		Structure,
@@ -93,6 +94,30 @@ public:
 
 	bool isSigned() const { return hasSign; }
 	unsigned short getBits() const { return numBits; }
+	virtual void print(llvm::raw_ostream& os) const override;
+};
+
+class DoubleExpressionType : public ExpressionType
+{
+	unsigned numBits = 0;
+	
+public:
+	static bool classof(const ExpressionType* that)
+	{
+		return that->getType() == Double;
+	}
+	
+	DoubleExpressionType()
+	: ExpressionType(Invalid)
+	{
+	}
+	
+	DoubleExpressionType(unsigned numBits)
+	: ExpressionType(Double), numBits(numBits)
+	{
+	}
+
+	unsigned getBits() const { return numBits; }
 	virtual void print(llvm::raw_ostream& os) const override;
 };
 

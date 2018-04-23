@@ -47,6 +47,11 @@ void IntegerExpressionType::print(llvm::raw_ostream& os) const
 	os << (hasSign ? "" : "u") << "int" << numBits << "_t";
 }
 
+void DoubleExpressionType::print(llvm::raw_ostream& os) const
+{
+	os << "double";
+}
+
 void PointerExpressionType::print(llvm::raw_ostream& os) const
 {
 	nested->print(os);

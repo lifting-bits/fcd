@@ -59,13 +59,15 @@ class AstContext
 		std::unordered_map<unsigned short, IntegerExpressionType> intTypes;
 		std::unordered_map<const ExpressionType*, PointerExpressionType> pointerTypes;
 		std::unordered_map<std::pair<const ExpressionType*, size_t>, ArrayExpressionType> arrayTypes;
-		// Function types and struct types are managed but not indexed.
+		// Double types, function types, struct types are managed but not indexed.
+		std::deque<DoubleExpressionType> doubleTypes;
 		std::deque<StructExpressionType> structTypes;
 		std::deque<FunctionExpressionType> functionTypes;
 
 	public:
 		VoidExpressionType& getVoid();
 		IntegerExpressionType& getIntegerType(bool isSigned, unsigned short numBits);
+		DoubleExpressionType& getDoubleType(unsigned numBits);
 		PointerExpressionType& getPointerTo(const ExpressionType& pointee);
 		ArrayExpressionType& getArrayOf(const ExpressionType& elementType, size_t numElements);
 		StructExpressionType& getStructure(std::string name);
@@ -73,7 +75,6 @@ class AstContext
 		size_t size() const;
 	};
 	
-	// DumbAllocator& pool;
 	llvm::Module* module;
 	std::unordered_map<Expression*, Expression*> phiReadsToWrites;
 	std::unordered_map<llvm::Value*, Expression*> expressionMap;
@@ -311,6 +312,7 @@ public:
 	const ExpressionType& getType(llvm::Type& type);
 	const VoidExpressionType& getVoid();
 	const IntegerExpressionType& getIntegerType(bool isSigned, unsigned short numBits);
+	const DoubleExpressionType& getDoubleType(unsigned numBits);
 	const PointerExpressionType& getPointerTo(const ExpressionType& pointee);
 	const ArrayExpressionType& getArrayOf(const ExpressionType& elementType, size_t numElements);
 	StructExpressionType& createStructure(std::string name);

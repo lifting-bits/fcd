@@ -244,6 +244,10 @@ public:
 			{
 				return visitConstant(*globvar->getInitializer());
 			}
+			else
+			{
+				return ctx.expressionForUndef();
+			}
 		}
 
 		CHECK(false) << "Unexpected type of constant";
@@ -493,6 +497,12 @@ ArrayExpressionType& AstContext::TypeIndex::getArrayOf(const ExpressionType& ele
 	return arrayTypes[key];
 }
 
+DoubleExpressionType& AstContext::TypeIndex::getDoubleType(unsigned numBits)
+{
+	doubleTypes.emplace_back(numBits);
+	return doubleTypes.back();
+}
+
 StructExpressionType& AstContext::TypeIndex::getStructure(std::string name)
 {
 	structTypes.emplace_back(name);
@@ -507,7 +517,7 @@ FunctionExpressionType& AstContext::TypeIndex::getFunction(const ExpressionType&
 
 size_t AstContext::TypeIndex::size() const
 {
-	return 1 + intTypes.size() + pointerTypes.size() + arrayTypes.size() + structTypes.size() + functionTypes.size();
+	return 1 + intTypes.size() + pointerTypes.size() + arrayTypes.size() + doubleTypes.size() + structTypes.size() + functionTypes.size();
 }
 
 void* AstContext::prepareStorageAndUses(unsigned useCount, size_t storage)
@@ -715,6 +725,10 @@ const ExpressionType& AstContext::getType(Type &type)
 	{
 		return getIntegerType(false, (unsigned short)intTy->getBitWidth());
 	}
+	else if (type.isDoubleTy())
+	{
+		return getDoubleType(type.getPrimitiveSizeInBits());
+	}
 	else if (auto ptr = dyn_cast<PointerType>(&type))
 	{
 		// XXX will break when pointer types lose getElementType
@@ -782,6 +796,11 @@ const VoidExpressionType& AstContext::getVoid()
 const IntegerExpressionType& AstContext::getIntegerType(bool isSigned, unsigned short numBits)
 {
 	return types.getIntegerType(isSigned, numBits);
+}
+
+const DoubleExpressionType& AstContext::getDoubleType(unsigned numBits)
+{
+	return types.getDoubleType(numBits);
 }
 
 const PointerExpressionType& AstContext::getPointerTo(const ExpressionType& pointee)
