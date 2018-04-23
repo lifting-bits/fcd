@@ -36,7 +36,6 @@
 #include "fcd/ast/ast_passes.h"
 #include "fcd/codegen/translation_context_remill.h"
 #include "fcd/header_decls.h"
-#include "fcd/main.h"
 #include "fcd/metadata.h"
 #include "fcd/passes.h"
 #include "fcd/python/python_context.h"
@@ -143,6 +142,12 @@ static std::unique_ptr<Executable> ParseExecutable(llvm::MemoryBuffer& buffer) {
   CHECK(exe) << "Failed to parse executable: " << errorOf(exe);
   return std::move(exe.get());
 }
+
+static bool isFullDisassembly() { return !FLAGS_partial && !FLAGS_exclusive; }
+
+static bool isPartialDisassembly() { return FLAGS_partial && !FLAGS_exclusive; }
+
+static bool isExclusiveDisassembly() { return FLAGS_exclusive; }
 
 static std::unique_ptr<llvm::Module> LiftExecutable(Executable& executable) {
   fcd::RemillTranslationContext RTC(*sLLVMContext, executable);
@@ -339,17 +344,6 @@ static bool InitOptPassPipeline(std::vector<llvm::Pass*>& passes) {
 
 }  // namespace
 
-bool isFullDisassembly() { return !FLAGS_partial && !FLAGS_exclusive; }
-
-bool isPartialDisassembly() { return FLAGS_partial && !FLAGS_exclusive; }
-
-bool isExclusiveDisassembly() { return FLAGS_exclusive; }
-
-bool isEntryPoint(uint64_t vaddr) {
-  return any_of(sUserEntryPoints.begin(), sUserEntryPoints.end(),
-                [&](uint64_t entryPoint) { return vaddr == entryPoint; });
-}
-
 int main(int argc, char** argv) {
   std::stringstream ss("");
 
@@ -418,7 +412,7 @@ int main(int argc, char** argv) {
     CHECK(RunPassPipeline(*module, opt_passes, executable.get()))
         << "Error while running pass pipeline";
   }
-  
+
   // step 3 (final step): emit output IR or C pseudocode
   if (FLAGS_module_out) {
     module->print(llvm::outs(), nullptr);

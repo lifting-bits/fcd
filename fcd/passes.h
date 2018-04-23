@@ -16,7 +16,6 @@
 #include <llvm/Transforms/Utils/MemorySSA.h>
 
 #include "fcd/ast/pass_backend.h"
-#include "fcd/pass_executable.h"
 #include "fcd/pass_asaa.h"
 
 llvm::FunctionPass*	createRegisterPointerPromotionPass();
