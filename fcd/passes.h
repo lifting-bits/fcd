@@ -15,12 +15,10 @@
 #include <llvm/Analysis/Passes.h>
 #include <llvm/Transforms/Utils/MemorySSA.h>
 
-#include "pass_argrec.h"
-#include "pass_backend.h"
-#include "pass_executable.h"
-#include "pass_asaa.h"
-#include "targetinfo.h"
+#include "fcd/ast/pass_backend.h"
+#include "fcd/pass_executable.h"
+#include "fcd/pass_asaa.h"
 
-llvm::FunctionPass*		createRegisterPointerPromotionPass();
+llvm::FunctionPass*	createRegisterPointerPromotionPass();
 
 #endif /* defined(fcd__passes_h) */
