@@ -10,12 +10,11 @@
 #ifndef fcd__metadata_h
 #define fcd__metadata_h
 
-#include "params_registry.h"
-
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Metadata.h>
+#include <llvm/IR/Module.h>
 
 #include <string>
 #include <vector>
@@ -53,7 +52,6 @@ namespace md
 	bool isRegisterStruct(const llvm::Value& value);
 	void setRegisterStruct(llvm::AllocaInst& alloca, bool registerStruct = true);
 	
-	void setRecoveredReturnFieldNames(llvm::Module& module, llvm::StructType& returnType, const CallInformation& callInfo);
 	llvm::StringRef getRecoveredReturnFieldName(llvm::Module& module, llvm::StructType& returnType, unsigned i);
 }
 

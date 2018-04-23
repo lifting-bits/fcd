@@ -101,9 +101,6 @@ static void InitOptPasses(void) {
   initializeTransformUtils(pr);
   initializeInstCombine(pr);
   initializeScalarOpts(pr);
-
-  initializeParameterRegistryPass(pr);
-  initializeArgumentRecoveryPass(pr);
 }
 
 static std::vector<llvm::Pass*> CreatePassesFromList(
@@ -300,8 +297,6 @@ static bool InitOptPassPipeline(std::vector<llvm::Pass*>& passes) {
   // Default passes
   std::vector<std::string> pass_names = {
       "globaldce",
-      // "fixindirects",  // fcd
-      // "argrec",        // fcd
       // "sroa",
       // "intnarrowing", // fcd
       // "signext", // fcd

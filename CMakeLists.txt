@@ -39,7 +39,6 @@ list(APPEND CMAKE_MODULE_PATH "${TRAILOFBITS_LIBRARIES}/llvm/lib/cmake/clang")
 find_package(LLVM 4.0 REQUIRED CONFIG)
 find_package(Clang REQUIRED CONFIG)
 find_package(PythonLibs 2.7 REQUIRED)
-find_package(capstone REQUIRED)
 find_package(gflags REQUIRED)
 find_package(glog REQUIRED)
 
@@ -50,25 +49,24 @@ set_target_properties(clanglib PROPERTIES IMPORTED_LOCATION "${TRAILOFBITS_LIBRA
 
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION} @ ${LLVM_DIR}")
 message(STATUS "Found Python ${PYTHONLIBS_VERSION_STRING} @ ${PYTHON_INCLUDE_PATH}")
-message(STATUS "Found Capstone @ ${CAPSTONE_INCLUDE_DIRS}")
 
 ### emulator ###
 
-file(GLOB_RECURSE emulatorsources ${PROJECT_SOURCE_DIR}/fcd/*.emulator.cpp)
+# file(GLOB_RECURSE emulatorsources ${PROJECT_SOURCE_DIR}/fcd/*.emulator.cpp)
 
-set(INCBIN_TEMPLATE ${PROJECT_SOURCE_DIR}/fcd/cpu/incbin.${CMAKE_SYSTEM_NAME}.tpl)
-foreach(emulatorsource ${emulatorsources})
-    string(REGEX REPLACE ".+/([^/]+)\.emulator\.cpp" "\\1" emulator_isa "${emulatorsource}")
-    add_custom_command(OUTPUT "${PROJECT_BINARY_DIR}/${emulator_isa}.emulator.s"
-                       COMMAND "${CMAKE_CXX_COMPILER}" -c -emit-llvm --std=gnu++14 -O3 "${emulatorsource}" -o "${PROJECT_BINARY_DIR}/${emulator_isa}.emulator.bc" -I"${CAPSTONE_INCLUDE_DIRS}"
-                       COMMAND sed -e "s/{CPU}/${emulator_isa}/" ${INCBIN_TEMPLATE} > "${PROJECT_BINARY_DIR}/${emulator_isa}.emulator.s"
-                       DEPENDS "${emulatorsource}"
-                       IMPLICIT_DEPENDS CXX "${emulatorsource}"
-                       )
-    set(emuasms ${emuasms} "${PROJECT_BINARY_DIR}/${emulator_isa}.emulator.s")
-endforeach()
-enable_language(ASM)
-add_library(emu OBJECT ${emuasms})
+# set(INCBIN_TEMPLATE ${PROJECT_SOURCE_DIR}/fcd/cpu/incbin.${CMAKE_SYSTEM_NAME}.tpl)
+# foreach(emulatorsource ${emulatorsources})
+#     string(REGEX REPLACE ".+/([^/]+)\.emulator\.cpp" "\\1" emulator_isa "${emulatorsource}")
+#     add_custom_command(OUTPUT "${PROJECT_BINARY_DIR}/${emulator_isa}.emulator.s"
+#                        COMMAND "${CMAKE_CXX_COMPILER}" -c -emit-llvm --std=gnu++14 -O3 "${emulatorsource}" -o "${PROJECT_BINARY_DIR}/${emulator_isa}.emulator.bc"
+#                        COMMAND sed -e "s/{CPU}/${emulator_isa}/" ${INCBIN_TEMPLATE} > "${PROJECT_BINARY_DIR}/${emulator_isa}.emulator.s"
+#                        DEPENDS "${emulatorsource}"
+#                        IMPLICIT_DEPENDS CXX "${emulatorsource}"
+#                        )
+#     set(emuasms ${emuasms} "${PROJECT_BINARY_DIR}/${emulator_isa}.emulator.s")
+# endforeach()
+# enable_language(ASM)
+# add_library(emu OBJECT ${emuasms})
 
 ### fcd ###
 set(subdirs fcd/ fcd/ast fcd/callconv fcd/clang fcd/codegen fcd/cpu fcd/executables fcd/symbols)
@@ -89,9 +87,9 @@ file(GLOB_RECURSE sources fcd/*.cpp)
 file(GLOB_RECURSE headers fcd/*.h)
 
 # remove emulators
-string(REGEX REPLACE "[^;]+.emulator.cpp;?" "" sources "${sources}")
+# string(REGEX REPLACE "[^;]+.emulator.cpp;?" "" sources "${sources}")
 
-add_executable(fcd ${sources} ${headers} $<TARGET_OBJECTS:emu> ${pythonbindingsfile} "${CMAKE_CURRENT_BINARY_DIR}/systemIncludePath.cpp")
+add_executable(fcd ${sources} ${headers} ${pythonbindingsfile} "${CMAKE_CURRENT_BINARY_DIR}/systemIncludePath.cpp")
 
 # NDEBUG must match llvm's build or it will crash
 if (${LLVM_ENABLE_ASSERTIONS})
@@ -104,7 +102,7 @@ target_compile_definitions(fcd PRIVATE ${LLVM_DEFINITIONS} FCD_DEBUG=1)
 target_include_directories(fcd PRIVATE ${subdirs})
 target_include_directories(fcd SYSTEM PUBLIC ${PROJECT_INCLUDEDIRECTORIES})
 target_include_directories(fcd SYSTEM PUBLIC ${PROJECT_SOURCE_DIR})
-target_include_directories(fcd SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${PYTHON_INCLUDE_DIRS} ${CAPSTONE_INCLUDE_DIRS})
+target_include_directories(fcd SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${PYTHON_INCLUDE_DIRS})
 
 target_compile_options(fcd PRIVATE --system-header-prefix=llvm/ --system-header-prefix=clang/ --system-header-prefix=clang-c/)
 target_compile_options(fcd PRIVATE -Wall -Werror=conversion -Wno-error=sign-conversion -Wshadow -Wunreachable-code -Wempty-body -Wconditional-uninitialized -Winvalid-offsetof -Wnewline-eof)
@@ -138,4 +136,4 @@ target_link_libraries(fcd PRIVATE ${LLVM_LIBRARIES})
 target_link_libraries(fcd PRIVATE dl -Wl,--gc-sections)
 
 set_source_files_properties(${pythonbindingsfile} PROPERTIES COMPILE_FLAGS -w)
-target_link_libraries(fcd PRIVATE ${PYTHON_LIBRARIES} ${CAPSTONE_LIBRARIES} glog::glog gflags remill)
+target_link_libraries(fcd PRIVATE ${PYTHON_LIBRARIES} glog::glog gflags remill)

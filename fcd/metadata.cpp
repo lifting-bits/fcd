@@ -335,36 +335,6 @@ void md::setRegisterStruct(AllocaInst& alloca, bool registerStruct)
 	}
 }
 
-void md::setRecoveredReturnFieldNames(Module& module, StructType& returnType, const CallInformation& callInfo)
-{
-	LLVMContext& ctx = module.getContext();
-	
-	string key;
-	bool result = getMdNameForType(returnType, key);
-	assert(result); (void) result;
-	
-	auto mdNode = module.getOrInsertNamedMetadata(key);
-	for (const ValueInformation& vi : callInfo.returns())
-	{
-		MDString* operand = nullptr;
-		if (vi.type == ValueInformation::IntegerRegister)
-		{
-			operand = MDString::get(ctx, vi.registerInfo->name);
-		}
-		else if (vi.type == ValueInformation::Stack)
-		{
-			string fieldName;
-			raw_string_ostream(fieldName) << "sp" << vi.frameBaseOffset;
-			operand = MDString::get(ctx, fieldName);
-		}
-		else
-		{
-			llvm_unreachable("not implemented");
-		}
-		mdNode->addOperand(MDNode::get(ctx, operand));
-	}
-}
-
 StringRef md::getRecoveredReturnFieldName(Module& module, StructType& returnType, unsigned int i)
 {
 	string key;
