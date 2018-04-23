@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef FCD_PASS_STACK_REMILL_H_
-#define FCD_PASS_STACK_REMILL_H_
+#ifndef FCD_PASS_STACKREC_REMILL_H_
+#define FCD_PASS_STACKREC_REMILL_H_
 
 #include <llvm/Analysis/Passes.h>
 #include <llvm/IR/Module.h>
@@ -33,17 +33,17 @@ class RemillStackRecovery : public llvm::ModulePass {
  public:
   static char ID;
 
-  RemillStackRecovery();
+  RemillStackRecovery(void);
 
   void getAnalysisUsage(llvm::AnalysisUsage &usage) const override;
   bool runOnModule(llvm::Module &module) override;
 };
 
-llvm::ModulePass *createRemillStackRecoveryPass();
+llvm::ModulePass *createRemillStackRecoveryPass(void);
 }  // namespace fcd
 
 namespace llvm {
 void initializeRemillStackRecoveryPass(PassRegistry &);
 }
 
-#endif  // FCD_PASS_STACK_REMILL_H_
+#endif  // FCD_PASS_STACKREC_REMILL_H_

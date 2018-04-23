@@ -14,34 +14,29 @@
  * limitations under the License.
  */
 
-#ifndef FCD_PASS_ARGREC_REMILL_H_
-#define FCD_PASS_ARGREC_REMILL_H_
+#ifndef FCD_PASS_INTRINSICS_REMILL_H_
+#define FCD_PASS_INTRINSICS_REMILL_H_
 
 #include <llvm/Analysis/Passes.h>
 #include <llvm/IR/Module.h>
 
-#include "fcd/callconv/callconv_remill.h"
-
 namespace fcd {
 
-class RemillArgumentRecovery : public llvm::ModulePass {
- private:
-  const char* cPrefix = "argrec_";
-  CallingConvention cc;
+class RemillFixIntrinsics: public llvm::ModulePass {
  public:
   static char ID;
 
-  RemillArgumentRecovery(void);
+  RemillFixIntrinsics(void);
 
-  void getAnalysisUsage(llvm::AnalysisUsage& usage) const override;
-  bool runOnModule(llvm::Module& module) override;
+  void getAnalysisUsage(llvm::AnalysisUsage &usage) const override;
+  bool runOnModule(llvm::Module &module) override;
 };
 
-llvm::ModulePass* createRemillArgumentRecoveryPass(void);
+llvm::ModulePass *createRemillFixIntrinsicsPass(void);
 }  // namespace fcd
 
 namespace llvm {
-void initializeRemillArgumentRecoveryPass(PassRegistry&);
+void initializeRemillFixIntrinsicsPass(PassRegistry &);
 }
 
-#endif // FCD_PASS_ARGREC_REMILL_H_
+#endif  // FCD_PASS_INTRINSICS_REMILL_H_
