@@ -300,14 +300,14 @@ static bool InitOptPassPipeline(std::vector<llvm::Pass*>& passes) {
   // Default passes
   std::vector<std::string> pass_names = {
       "globaldce",
-      "fixindirects",  // fcd
-      "argrec",        // fcd
-                       // "sroa",
-                       // "intnarrowing", // fcd
-                       // "signext", // fcd
-                       // "instcombine",
-                       // "intops", // fcd
-                       // "simplifyconditions", // fcd
+      // "fixindirects",  // fcd
+      // "argrec",        // fcd
+      // "sroa",
+      // "intnarrowing", // fcd
+      // "signext", // fcd
+      // "instcombine",
+      // "intops", // fcd
+      // "simplifyconditions", // fcd
       // // <-- custom passes go here with the default pass pipeline
       // "instcombine",
       // "gvn",
