@@ -36,23 +36,69 @@ namespace fcd {
 namespace {
 
 static const char *sPrefix;
+static const remill::Arch *sArch;
 
 static std::unordered_set<const char *> RegisterAliasSet(const char *reg) {
-  static const char *aliases[][9] = {{"AL", "AH", "AX", "EAX", "RAX", nullptr},
-                                     {"CL", "CH", "CX", "ECX", "RCX", nullptr},
-                                     {"DL", "DH", "DX", "EDX", "RDX", nullptr},
-                                     {"SIL", "SI", "ESI", "RSI", nullptr},
-                                     {"DIL", "DI", "EDI", "RDI", nullptr},
-                                     {"SPL", "SP", "ESP", "RSP", nullptr},
-                                     {"R8B", "R8W", "R8D", "R8", nullptr},
-                                     {"R9B", "R9W", "R9D", "R9", nullptr},
-                                     {nullptr}};
+  static const char *AMD64Aliases[][9] = {
+      {"AL", "AH", "AX", "EAX", "RAX", nullptr},
+      {"CL", "CH", "CX", "ECX", "RCX", nullptr},
+      {"DL", "DH", "DX", "EDX", "RDX", nullptr},
+      {"SIL", "SI", "ESI", "RSI", nullptr},
+      {"DIL", "DI", "EDI", "RDI", nullptr},
+      {"SPL", "SP", "ESP", "RSP", nullptr},
+      {"R8B", "R8W", "R8D", "R8", nullptr},
+      {"R9B", "R9W", "R9D", "R9", nullptr},
+      {nullptr}};
+
+  static const char *AArch64Aliases[][35] = {{"W0", "X0", nullptr},
+                                             {"W1", "X1", nullptr},
+                                             {"W3", "X3", nullptr},
+                                             {"W3", "X3", nullptr},
+                                             {"W4", "X4", nullptr},
+                                             {"W5", "X5", nullptr},
+                                             {"W6", "X6", nullptr},
+                                             {"W7", "X7", nullptr},
+                                             {"W8", "X8", nullptr},
+                                             {"W9", "X9", nullptr},
+                                             {"W10", "X10", nullptr},
+                                             {"X11", "X11", nullptr},
+                                             {"W12", "X12", nullptr},
+                                             {"W13", "X13", nullptr},
+                                             {"W14", "X14", nullptr},
+                                             {"W15", "X15", nullptr},
+                                             {"W16", "X16", nullptr},
+                                             {"W17", "X17", nullptr},
+                                             {"W18", "X18", nullptr},
+                                             {"W19", "X19", nullptr},
+                                             {"W20", "X20", nullptr},
+                                             {"W21", "X21", nullptr},
+                                             {"W22", "X22", nullptr},
+                                             {"W23", "X23", nullptr},
+                                             {"W24", "X24", nullptr},
+                                             {"W25", "X25", nullptr},
+                                             {"W26", "X26", nullptr},
+                                             {"W27", "X27", nullptr},
+                                             {"W28", "X28", nullptr},
+                                             {"W29", "X29", nullptr},
+                                             {"W30", "X30", nullptr},
+                                             {"W31", "X31", nullptr},
+                                             {"WZR", "ZR", nullptr},
+                                             {"WSP", "SP", nullptr},
+                                             {nullptr}};
+  
+  auto GetAlias = [&](unsigned i, unsigned j) {
+    return sArch->IsAMD64() ? AMD64Aliases[i][j] : AArch64Aliases[i][j];
+  };
+
+  auto GetAliasSet = [&](unsigned i) {
+    return sArch->IsAMD64() ? AMD64Aliases[i] : AArch64Aliases[i];
+  };
 
   static std::unordered_map<const char *, const char **> resolver;
   if (resolver.empty()) {
-    for (unsigned i = 0; aliases[i][0] != nullptr; ++i) {
-      for (unsigned j = 0; aliases[i][j] != nullptr; ++j) {
-        resolver[aliases[i][j]] = aliases[i];
+    for (unsigned i = 0; GetAlias(i, 0) != nullptr; ++i) {
+      for (unsigned j = 0; GetAlias(i, j) != nullptr; ++j) {
+        resolver[GetAlias(i, j)] = GetAliasSet(i);
       }
     }
   }
@@ -317,6 +363,7 @@ char RemillArgumentRecovery::ID = 0;
 RemillArgumentRecovery::RemillArgumentRecovery(void)
     : ModulePass(RemillArgumentRecovery::ID),
       cc(CallingConvention(remill::GetTargetArch()->DefaultCallingConv())) {
+  sArch = remill::GetTargetArch();
   sPrefix = cPrefix;
 }
 

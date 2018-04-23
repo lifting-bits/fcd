@@ -418,7 +418,7 @@ int main(int argc, char** argv) {
     CHECK(RunPassPipeline(*module, opt_passes, executable.get()))
         << "Error while running pass pipeline";
   }
-
+  
   // step 3 (final step): emit output IR or C pseudocode
   if (FLAGS_module_out) {
     module->print(llvm::outs(), nullptr);
