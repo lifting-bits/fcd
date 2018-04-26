@@ -35,7 +35,7 @@ namespace fcd {
 
 namespace {
 
-static const char *sPrefix;
+static std::string sPrefix;
 static const remill::Arch *sArch;
 
 static std::unordered_set<const char *> RegisterAliasSet(const char *reg) {
@@ -85,7 +85,7 @@ static std::unordered_set<const char *> RegisterAliasSet(const char *reg) {
                                              {"WZR", "ZR", nullptr},
                                              {"WSP", "SP", nullptr},
                                              {nullptr}};
-  
+
   auto GetAlias = [&](unsigned i, unsigned j) {
     return sArch->IsAMD64() ? AMD64Aliases[i][j] : AArch64Aliases[i][j];
   };
@@ -228,7 +228,9 @@ static void LoadReturnRegToRetInsts(llvm::Function *func,
 
 static std::string TrimPrefix(std::string str) {
   auto ref = llvm::StringRef(str);
-  ref.consume_front(sPrefix);
+  if (ref.startswith(sPrefix)) {
+    ref = ref.drop_front(sPrefix.size());
+  }
   return ref.str();
 }
 
@@ -380,17 +382,17 @@ bool RemillArgumentRecovery::runOnModule(llvm::Module &module) {
       // and return registers. Then declare a new function
       // with the recovered argument and return types.
       auto cc_func = DeclareParametrizedFunc(&func, cc);
-      
+
       // Converts remill's `State`, `pc` and `Memory` args
       // to local variables so that they make room for
       // recovered register arguments.
       ConvertRemillArgsToLocals(&func);
-      
+
       // Clone the old function to the newly created one
       remill::ValueMap val_map;
       remill::CloneFunctionInto(&func, cc_func, val_map);
 
-      // Create local variables for every argument in 
+      // Create local variables for every argument in
       // `cc_func` and store parameter values to them.
       StoreRegArgsToLocals(cc_func);
 
@@ -415,7 +417,9 @@ bool RemillArgumentRecovery::runOnModule(llvm::Module &module) {
       auto arg_name = TrimPrefix(arg.getName());
       auto var = remill::FindVarInFunction(func, arg_name);
       arg.takeName(var);
-      arg.removeAttr(llvm::Attribute::Dereferenceable);
+      arg.removeAttr(
+          llvm::AttributeSet::get(arg.getContext(), arg.getArgNo() + 1,
+                                  {llvm::Attribute::Dereferenceable}));
     }
     func->takeName(old_func);
     old_func->replaceAllUsesWith(llvm::UndefValue::get(old_func->getType()));

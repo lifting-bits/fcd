@@ -7,7 +7,16 @@
 // license. See LICENSE.md for details.
 //
 
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
+#include "remill/BC/Version.h"
+
 #include "passes.h"
+
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 9)
+#include <llvm/Transforms/Utils/MemorySSA.h>
+#endif
 
 #include <llvm/ADT/PostOrderIterator.h>
 #include <llvm/IR/PatternMatch.h>
@@ -24,12 +33,8 @@ namespace
 		MemorySSADLE() : FunctionPass(ID)
 		{
 		}
-		
-		virtual StringRef getPassName() const override
-		{
-			return "Dead Load Elimination";
-		}
-		
+
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 9)		
 		virtual void getAnalysisUsage(AnalysisUsage& au) const override
 		{
 			au.addRequired<AAResultsWrapperPass>();
@@ -96,6 +101,12 @@ namespace
 			}
 			return changed;
 		}
+#else
+		virtual bool runOnFunction(Function& f) override
+		{
+			CHECK(false) << "LLVM 3.9 required for MemorySSA based optimizations";
+		}
+#endif
 	};
 	
 	char MemorySSADLE::ID = 0;

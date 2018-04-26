@@ -54,7 +54,7 @@ namespace
 			
 			if (auto assignment = dyn_cast<NAryOperatorExpression>(use.getUser()))
 			if (assignment->getType() == NAryOperatorExpression::Assign)
-			if (all_of(assignment->operands(), [=](Expression* expr) { return expr == replaceWith; }))
+			if (all_of(assignment->operands().begin(), assignment->operands().end(), [=](Expression* expr) { return expr == replaceWith; }))
 			{
 				// This assignment is now useless, drop it everywhere. (There is most likely just one use of it.)
 				while (assignment->uses_size() > 0)
@@ -156,7 +156,7 @@ void AstMergeCongruentVariables::doRun(FunctionNode &fn)
 			assert(cast<NAryOperatorExpression>(user)->getType() == NAryOperatorExpression::Assign);
 			for (Expression* assignmentOperand : user->operands())
 			{
-				if (assignmentOperand != key && find(assignableExpressions, assignmentOperand) != assignableExpressions.end())
+				if (assignmentOperand != key && find(assignableExpressions.begin(), assignableExpressions.end(), assignmentOperand) != assignableExpressions.end())
 				{
 					candidateSet.emplace(key, assignmentOperand);
 				}

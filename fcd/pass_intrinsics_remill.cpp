@@ -35,7 +35,9 @@ static llvm::Module *sModule;
 
 static std::string TrimPrefix(std::string pref, std::string str) {
   auto ref = llvm::StringRef(str);
-  ref.consume_front(pref);
+  if (ref.startswith(pref)) {
+    ref = ref.drop_front(pref.size());
+  }
   return ref.str();
 }
 

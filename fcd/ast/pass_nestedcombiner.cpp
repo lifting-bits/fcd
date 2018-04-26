@@ -26,7 +26,7 @@ namespace
 		
 		bool visitNAryOperator(NAryOperatorExpression& nary)
 		{
-			return nary.getType() == NAryOperatorExpression::Assign || any_of(nary.operands(), [&](ExpressionUse& use)
+			return nary.getType() == NAryOperatorExpression::Assign || any_of(nary.operands().begin(), nary.operands().end(), [&](ExpressionUse& use)
 			{
 				return visit(*use.getUse());
 			});

@@ -22,6 +22,8 @@
 #include <llvm/Support/GenericDomTree.h>
 #include <llvm/Support/GenericDomTreeConstruction.h>
 
+#include "remill/BC/Version.h"
+
 #include <deque>
 #include <iterator>
 #include <unordered_map>
@@ -32,9 +34,9 @@ struct PreAstBasicBlock;
 
 struct PreAstBasicBlockEdge
 {
-	NOT_NULL(PreAstBasicBlock) from;
-	NOT_NULL(PreAstBasicBlock) to;
-	NOT_NULL(Expression) edgeCondition;
+	PreAstBasicBlock* from;
+	PreAstBasicBlock* to;
+	Expression* edgeCondition;
 	
 	PreAstBasicBlockEdge(PreAstBasicBlock& from, PreAstBasicBlock& to, Expression& edgeCondition)
 	: from(&from), to(&to), edgeCondition(&edgeCondition)
@@ -46,8 +48,8 @@ struct PreAstBasicBlockEdge
 
 struct PreAstBasicBlock
 {
-	llvm::SmallVector<NOT_NULL(PreAstBasicBlockEdge), 8> predecessors;
-	llvm::SmallVector<NOT_NULL(PreAstBasicBlockEdge), 2> successors;
+	llvm::SmallVector<PreAstBasicBlockEdge*, 8> predecessors;
+	llvm::SmallVector<PreAstBasicBlockEdge*, 2> successors;
 	
 	llvm::BasicBlock* block;
 	StatementReference blockStatement;
@@ -114,7 +116,9 @@ public:
 		return blockList.size();
 	}
 	
+	#if LLVM_VERSION_NUMBER >= LLVM_VERSION(4, 0)
 	void view() const;
+	#endif
 };
 
 struct PreAstBasicBlockRegionTraits
@@ -128,7 +132,7 @@ struct PreAstBasicBlockRegionTraits
 };
 
 template<typename Iterator, typename Transformer>
-struct PreAstBasicBlockIterator : public std::iterator<std::input_iterator_tag, NOT_NULL(PreAstBasicBlock)>
+struct PreAstBasicBlockIterator : public std::iterator<std::input_iterator_tag, PreAstBasicBlock*>
 {
 	typename std::remove_reference<Iterator>::type base;
 	Transformer transformer;
@@ -138,7 +142,7 @@ struct PreAstBasicBlockIterator : public std::iterator<std::input_iterator_tag, 
 	{
 	}
 	
-	NOT_NULL(PreAstBasicBlock) operator*() const
+	PreAstBasicBlock* operator*() const
 	{
 		return transformer(*base);
 	}
@@ -199,6 +203,7 @@ namespace
 template<>
 struct llvm::GraphTraits<PreAstBasicBlock*>
 {
+	typedef PreAstBasicBlock NodeType;
 	typedef PreAstBasicBlock* NodeRef;
 	typedef decltype(makeSuccessorIterator(std::declval<decltype(PreAstBasicBlock().successors)::iterator>())) ChildIteratorType;
 	
@@ -207,12 +212,12 @@ struct llvm::GraphTraits<PreAstBasicBlock*>
 		return block;
 	}
 	
-	static ChildIteratorType child_begin(NodeRef node)
+	static ChildIteratorType child_begin(NodeType *node)
 	{
 		return makeSuccessorIterator(node->successors.begin());
 	}
 	
-	static ChildIteratorType child_end(NodeRef node)
+	static ChildIteratorType child_end(NodeType *node)
 	{
 		return makeSuccessorIterator(node->successors.end());
 	}
@@ -221,6 +226,7 @@ struct llvm::GraphTraits<PreAstBasicBlock*>
 template<>
 struct llvm::GraphTraits<llvm::Inverse<PreAstBasicBlock*>>
 {
+	typedef PreAstBasicBlock NodeType;
 	typedef PreAstBasicBlock* NodeRef;
 	typedef decltype(makePredecessorIterator(std::declval<decltype(PreAstBasicBlock().successors)::iterator>())) ChildIteratorType;
 	
@@ -242,16 +248,28 @@ struct llvm::GraphTraits<llvm::Inverse<PreAstBasicBlock*>>
 
 struct PreAstContextGraphTraits
 {
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(4, 0)
 	typedef decltype(makeNodeListIterator(std::declval<PreAstContext>().begin())) nodes_iterator;
+#else
+	typedef decltype(std::declval<PreAstContext>().begin()) nodes_iterator;
+#endif
 	
 	static nodes_iterator nodes_begin(PreAstContext* f)
 	{
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(4, 0)
 		return makeNodeListIterator(f->begin());
+#else
+		return f->begin();
+#endif
 	}
 	
 	static nodes_iterator nodes_end(PreAstContext* f)
 	{
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(4, 0)
 		return makeNodeListIterator(f->end());
+#else
+		return f->end();
+#endif
 	}
 	
 	static size_t size(PreAstContext* f)

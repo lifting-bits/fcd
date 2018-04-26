@@ -7,6 +7,9 @@
 // license. See LICENSE.md for details.
 //
 
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
 #include "errors.h"
 #include "python_executable.h"
 #include "python_helpers.h"
@@ -345,6 +348,6 @@ PythonExecutableFactory::PythonExecutableFactory()
 				
 ErrorOr<unique_ptr<Executable>> PythonExecutableFactory::parse(const uint8_t* begin, const uint8_t* end)
 {
-	PrettyStackTraceFormat parsing("Parsing executable with Python script \"%s\"", scriptPath.c_str());
+	LOG(INFO) << "Parsing executable with Python script " << scriptPath;
 	return PythonParsedExecutable::create(scriptPath, begin, end);
 }

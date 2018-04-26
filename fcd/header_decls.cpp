@@ -28,6 +28,8 @@
 
 #include <dlfcn.h>
 
+#include "remill/BC/Version.h"
+
 using namespace clang;
 using namespace llvm;
 using namespace std;
@@ -212,7 +214,7 @@ unique_ptr<HeaderDeclarations> HeaderDeclarations::create(llvm::Module& module, 
 			}
 			
 			auto frameworkArgsArrayRef = makeArrayRef(&*cInvocationArgs.begin(), &*cInvocationArgs.end());
-			clang = createInvocationFromCommandLine(frameworkArgsArrayRef, diags);
+			clang = make_shared<CompilerInvocation>(*createInvocationFromCommandLine(frameworkArgsArrayRef, diags));
 		}
 		
 		if (clang)
@@ -244,7 +246,12 @@ unique_ptr<HeaderDeclarations> HeaderDeclarations::create(llvm::Module& module, 
 			preprocessorOpts.addRemappedFile("<fcd>", includeBuffer.release());
 			
 			auto pch = std::make_shared<PCHContainerOperations>();
+
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(4, 0)
 			auto tu = ASTUnit::LoadFromCompilerInvocation(clang, pch, diags, new FileManager(FileSystemOptions()), true);
+#else
+			auto tu = ASTUnit::LoadFromCompilerInvocation(clang.get(), pch, diags, new FileManager(FileSystemOptions()), true);			
+#endif
 			if (diagPrinter->getNumErrors() == 0)
 			{
 				if (tu)

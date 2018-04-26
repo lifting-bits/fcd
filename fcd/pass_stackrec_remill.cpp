@@ -196,9 +196,9 @@ static std::vector<llvm::AllocaInst *> FindStackParams(
     std::unordered_map<llvm::AllocaInst *, int64_t> &vars) {
   auto func = call->getCalledFunction();
 
-  auto call_range =
-      llvm::make_range(std::next(llvm::BasicBlock::reverse_iterator(call)),
-                       call->getParent()->rend());
+  auto call_range = llvm::make_range(
+      std::next(llvm::BasicBlock::reverse_iterator(call->getIterator())),
+      call->getParent()->rend());
 
   std::map<int64_t, llvm::AllocaInst *> func_vars;
 

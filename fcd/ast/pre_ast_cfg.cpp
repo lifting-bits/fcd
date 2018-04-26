@@ -225,7 +225,9 @@ PreAstBasicBlock& PreAstContext::createRedirectorBlock(ArrayRef<PreAstBasicBlock
 	return newBlock;
 }
 
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(4, 0)
 void PreAstContext::view() const
 {
 	ViewGraph(const_cast<PreAstContext*>(this), "Pre-AST Basic Block Graph");
 }
+#endif

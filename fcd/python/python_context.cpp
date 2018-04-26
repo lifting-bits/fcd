@@ -62,11 +62,6 @@ namespace
 		{
 		}
 		
-		virtual StringRef getPassName() const override
-		{
-			return name.c_str();
-		}
-		
 		virtual bool runOnModule(Module& m) override
 		{
 			auto pyModuleObject = TAKEREF Py_LLVMModule_Type.tp_alloc(&Py_LLVMModule_Type, 0);
@@ -82,11 +77,6 @@ namespace
 		PythonWrappedFunction(PythonWrapper wrapper)
 		: FunctionPass(ID), PythonWrapper(move(wrapper))
 		{
-		}
-		
-		virtual StringRef getPassName() const override
-		{
-			return name.c_str();
 		}
 		
 		virtual bool runOnFunction(Function& fn) override

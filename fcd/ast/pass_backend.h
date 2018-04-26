@@ -54,11 +54,6 @@ public:
 	AstBackEnd();
 	~AstBackEnd();
 	
-	inline virtual llvm::StringRef getPassName() const override
-	{
-		return "AST Back-End";
-	}
-	
 	virtual void getAnalysisUsage(llvm::AnalysisUsage &au) const override;
 	virtual bool runOnModule(llvm::Module& m) override;
 	

@@ -66,7 +66,7 @@ namespace
 				SmallPtrSet<PreAstBasicBlock*, 16> loopMembers(iter->begin(), iter->end());
 				for (auto block : *iter)
 				{
-					hasOutsideSuccessor = any_of(block->successors, [&](PreAstBasicBlockEdge* edge)
+					hasOutsideSuccessor = any_of(block->successors.begin(), block->successors.end(), [&](PreAstBasicBlockEdge* edge)
 					{
 						return loopMembers.count(edge->to) == 0;
 					});
@@ -81,7 +81,7 @@ namespace
 				{
 					for (auto block : *iter)
 					{
-						auto outsidePredecessorIter = find_if(block->predecessors, [&](PreAstBasicBlockEdge* edge)
+						auto outsidePredecessorIter = find_if(block->predecessors.begin(), block->predecessors.end(), [&](PreAstBasicBlockEdge* edge)
 						{
 							return loopMembers.count(edge->from) == 0;
 						});
@@ -189,7 +189,7 @@ namespace
 				while (largerEntryIter != largerConjunctions.end())
 				{
 					auto larger = &inputConjunctions[*largerEntryIter];
-					auto iter = find_if(larger->expressions, [&](Expression* expr) {
+					auto iter = find_if(larger->expressions.begin(), larger->expressions.end(), [&](Expression* expr) {
 						return areOpposites(*sizeOne->expressions.front(), *expr);
 					});
 					if (iter != larger->expressions.end())
@@ -290,7 +290,7 @@ namespace
 			// exit.
 			if (!domTree.dominates(entry, exit))
 			{
-				bool onlyEntryOrExit = all_of(entrySuccessors, [=](PreAstBasicBlock* frontierBlock)
+				bool onlyEntryOrExit = all_of(entrySuccessors.begin(), entrySuccessors.end(), [=](PreAstBasicBlock* frontierBlock)
 				{
 					return frontierBlock == entry || frontierBlock == exit;
 				});
@@ -314,7 +314,7 @@ namespace
 					return false;
 				}
 				
-				bool domFrontierNotCommon = any_of(entrySuccessor->predecessors, [&](PreAstBasicBlockEdge* edge)
+				bool domFrontierNotCommon = any_of(entrySuccessor->predecessors.begin(), entrySuccessor->predecessors.end(), [&](PreAstBasicBlockEdge* edge)
 				{
 					return domTree.dominates(entry, edge->from) && !domTree.dominates(exit, edge->from);
 				});
@@ -570,7 +570,7 @@ namespace
 					orderedRegionNodes.push_back(edge->to);
 				}
 				
-				auto edgeToIter = find_if(dfsStack, [&](DfsStackItem& item) { return &item.block == edge->to; });
+				auto edgeToIter = find_if(dfsStack.begin(), dfsStack.end(), [&](DfsStackItem& item) { return &item.block == edge->to; });
 				if (edgeToIter != dfsStack.end())
 				{
 					backEdges.push_back(edge);
@@ -635,7 +635,7 @@ namespace
 					if (loopNodes.count(*entry) == 0)
 					{
 						// Insert new block before the first loop node.
-						auto insertPosition = find_if(blocksInReversePostOrder, [&](PreAstBasicBlock* block)
+						auto insertPosition = find_if(blocksInReversePostOrder.begin(), blocksInReversePostOrder.end(), [&](PreAstBasicBlock* block)
 						{
 							return loopNodes.count(block) != 0;
 						});
@@ -719,7 +719,7 @@ namespace
 			if (regionSize == 1)
 			{
 				// Don't waste time on single-block regions, unless they loop.
-				if (!any_of(entry->successors, [=](PreAstBasicBlockEdge* edge) { return edge->to == entry; }))
+				if (!any_of(entry->successors.begin(), entry->successors.end(), [=](PreAstBasicBlockEdge* edge) { return edge->to == entry; }))
 				{
 					return false;
 				}

@@ -10,6 +10,7 @@
 #ifndef FCD_PASS_ASAA_H_
 #define FCD_PASS_ASAA_H_
 
+#include <llvm/Analysis/TargetLibraryInfo.h>
 #include <llvm/Analysis/AliasAnalysis.h>
 
 namespace fcd {
@@ -18,6 +19,8 @@ class AddressSpaceAAResult : public llvm::AAResultBase<AddressSpaceAAResult> {
   friend llvm::AAResultBase<AddressSpaceAAResult>;
 
  public:
+  AddressSpaceAAResult(const llvm::TargetLibraryInfo* TLI = nullptr);
+
   bool invalidate(llvm::Function& func,
                   const llvm::PreservedAnalyses& analyses) {
     // Stateless.

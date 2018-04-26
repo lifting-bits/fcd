@@ -23,9 +23,6 @@
 #include <llvm/Support/PrettyStackTrace.h>
 #include <llvm/Support/Signals.h>
 #include <llvm/Support/SourceMgr.h>
-#include <llvm/Transforms/IPO.h>
-#include <llvm/Transforms/Scalar.h>
-#include <llvm/Transforms/Scalar/GVN.h>
 
 #include <list>
 #include <memory>
@@ -35,6 +32,8 @@
 
 #include "fcd/ast/ast_passes.h"
 #include "fcd/codegen/translation_context_remill.h"
+#include "fcd/compat/IPO.h"
+#include "fcd/compat/Scalar.h"
 #include "fcd/header_decls.h"
 #include "fcd/metadata.h"
 #include "fcd/passes.h"
@@ -391,14 +390,12 @@ int main(int argc, char** argv) {
 
   // step 1: create annotated module from executable (or load it from .ll)
   if (FLAGS_module_in) {
-    llvm::PrettyStackTraceFormat parsingIR("Parsing IR from \"%s\"",
-                                           inputFile.c_str());
+    LOG(INFO) << "Parsing IR from " << inputFile;
     llvm::SMDiagnostic errs;
     module = llvm::parseIRFile(inputFile, errs, llvm);
     CHECK(module) << "Failed to parse input file: " << errs.getMessage().str();
   } else {
-    llvm::PrettyStackTraceFormat parsingIR("Parsing executable \"%s\"",
-                                           inputFile.c_str());
+    LOG(INFO) << "Parsing executable " << inputFile;
 
     auto buffer = llvm::MemoryBuffer::getFile(inputFile, -1, false);
     CHECK(buffer) << "Failed to open input file: " << errorOf(buffer);

@@ -36,7 +36,7 @@ SET(CMAKE_INSTALL_RPATH "${LIBRARY_REPOSITORY_ROOT}/llvm/lib")
 
 # todo: add the following line to cxx-common
 list(APPEND CMAKE_MODULE_PATH "${TRAILOFBITS_LIBRARIES}/llvm/lib/cmake/clang")
-find_package(LLVM 4.0 REQUIRED CONFIG)
+find_package(LLVM REQUIRED CONFIG)
 find_package(Clang REQUIRED CONFIG)
 find_package(PythonLibs 2.7 REQUIRED)
 find_package(gflags REQUIRED)
@@ -69,7 +69,7 @@ message(STATUS "Found Python ${PYTHONLIBS_VERSION_STRING} @ ${PYTHON_INCLUDE_PAT
 # add_library(emu OBJECT ${emuasms})
 
 ### fcd ###
-set(subdirs fcd/ fcd/ast fcd/callconv fcd/clang fcd/codegen fcd/cpu fcd/executables fcd/symbols)
+set(subdirs fcd/ fcd/ast fcd/callconv fcd/clang fcd/codegen fcd/executables fcd/symbols)
 set(pythonbindingsfile "${CMAKE_CURRENT_BINARY_DIR}/bindings.cpp")
 set(subdirs ${subdirs} fcd/python)
 add_custom_command(OUTPUT ${pythonbindingsfile}

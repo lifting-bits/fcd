@@ -6,6 +6,7 @@
 // This file is distributed under the University of Illinois Open Source
 // license. See LICENSE.md for details.
 //
+#include "remill/BC/Version.h"
 
 #include "passes.h"
 
@@ -48,14 +49,13 @@ namespace
 		{
 		}
 		
-		virtual StringRef getPassName() const override
-		{
-			return "Narrow Integers";
-		}
-		
 		virtual void getAnalysisUsage(AnalysisUsage& au) const override
 		{
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 9)
 			au.addRequired<DemandedBitsWrapperPass>();
+#else		
+			au.addRequired<DemandedBits>();
+#endif
 		}
 		
 		Value* narrowDown(Value* thatValue, unsigned size)
@@ -104,8 +104,13 @@ namespace
 		{
 			resized.clear();
 			currentFunction = &fn;
+
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 9)
 			DemandedBits& db = getAnalysis<DemandedBitsWrapperPass>().getDemandedBits();
-			
+#else		
+			DemandedBits& db = getAnalysis<DemandedBits>();
+#endif
+
 			for (BasicBlock& bb : fn)
 			{
 				for (Instruction& inst : bb)

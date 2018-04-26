@@ -838,11 +838,6 @@ namespace
 		{
 		}
 		
-		virtual StringRef getPassName() const override
-		{
-			return "Identify locals";
-		}
-		
 		Argument* getStackPointer(Function& fn)
 		{
 			ConstantInt* stackPointerIndex = md::getStackPointerArgument(fn);

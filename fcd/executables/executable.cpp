@@ -14,6 +14,8 @@
 #include "flat_binary.h"
 #include "python_executable.h"
 
+#include "remill/BC/Version.h"
+
 #include <ctype.h>
 
 using namespace llvm;
@@ -127,6 +129,7 @@ namespace
 			return static_cast<unsigned>(factories().size());
 		}
 		
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(4, 0)
 		virtual StringRef getOption(unsigned n) const override
 		{
 			return factories().at(n).Name;
@@ -136,7 +139,17 @@ namespace
 		{
 			return factories().at(n).HelpStr;
 		}
+#else	
+		virtual const char *getOption(unsigned n) const override
+		{
+			return factories().at(n).Name;
+		}
 		
+		virtual const char *getDescription(unsigned n) const override
+		{
+			return factories().at(n).HelpStr;
+		}
+#endif	
 		virtual const cl::GenericOptionValue& getOptionValue(unsigned n) const override
 		{
 			return factories().at(n).factory;
