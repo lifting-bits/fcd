@@ -18,6 +18,8 @@
 
 #include <llvm/IR/Argument.h>
 
+#include <vector>
+
 #include "remill/BC/Compat/Attributes.h"
 #include "remill/BC/Version.h"
 
@@ -35,6 +37,12 @@ static llvm::AttributeSet createAttrSet(
     llvm::ArrayRef<llvm::Attribute::AttrKind> attrs) {
 #if LLVM_VERSION_NUMBER <= LLVM_VERSION(4, 0)
   return llvm::AttributeSet::get(ctx, idx, attrs);
+#elif LLVM_VERSION_NUMBER >= LLVM_VERSION(5, 0)
+  std::vector<llvm::Attribute> tmp;
+  for (auto attr : attrs) {
+    tmp.push_back(llvm::Attribute::get(ctx, attr));
+  }
+  return llvm::AttributeSet::get(ctx, tmp);
 #else
   return llvm::AttributeSet::get(ctx, attrs);
 #endif
