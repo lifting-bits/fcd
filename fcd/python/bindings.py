@@ -243,6 +243,11 @@ for returnType, name, parameters in prototypeRE.findall(contents):
 	p = CPrototype(returnType, name, parameters)
 	try:
 		method = PythonMethod(p)
+
+		for param in method.params:
+			if param.type == "object":
+				classes[param.generic] = PythonClass(param.generic)
+
 		classType = method.inferSelf()
 		if classType not in classes:
 			classes[classType] = PythonClass(classType)
