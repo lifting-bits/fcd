@@ -39,11 +39,10 @@ llvm::AliasResult AddressSpaceAAResult::alias(const llvm::MemoryLocation& a,
 char AddressSpaceAAWrapperPass::ID = 0;
 
 bool AddressSpaceAAWrapperPass::doInitialization(llvm::Module& module) {
-  auto& TLI = getAnalysis<llvm::TargetLibraryInfoWrapperPass>().getTLI();
-
 #if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 9)
     result.reset(new AddressSpaceAAResult);
 #else
+    auto& TLI = getAnalysis<llvm::TargetLibraryInfoWrapperPass>().getTLI();
     result.reset(new AddressSpaceAAResult(&TLI));
 #endif
 

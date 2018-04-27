@@ -58,6 +58,7 @@ PreAstBasicBlock::PreAstBasicBlock(PreAstBasicBlock&& that)
 
 PreAstBasicBlock& PreAstBasicBlock::operator=(PreAstBasicBlock&& that)
 {
+	::swap(parent, that.parent);
 	::swap(block, that.block);
 	::swap(blockStatement, that.blockStatement);
 	::swap(predecessors, that.predecessors);

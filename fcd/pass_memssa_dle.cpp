@@ -12,11 +12,8 @@
 
 #include "remill/BC/Version.h"
 
-#include "passes.h"
-
-#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 9)
-#include <llvm/Transforms/Utils/MemorySSA.h>
-#endif
+#include "fcd/passes.h"
+#include "fcd/compat/MemorySSA.h"
 
 #include <llvm/ADT/PostOrderIterator.h>
 #include <llvm/IR/PatternMatch.h>
@@ -34,7 +31,7 @@ namespace
 		{
 		}
 
-#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 9)		
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 9)
 		virtual void getAnalysisUsage(AnalysisUsage& au) const override
 		{
 			au.addRequired<AAResultsWrapperPass>();
@@ -79,10 +76,16 @@ namespace
 			
 			for (LoadInst* deletedLoad : deletedLoads)
 			{
+
 				auto access = mssa.getMemoryAccess(deletedLoad);
 				assert(access != nullptr);
 				deletedLoad->eraseFromParent();
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(5, 0)
+				MemorySSAUpdater updater(&mssa);
+				updater.removeMemoryAccess(access);
+#else
 				mssa.removeMemoryAccess(access);
+#endif
 			}
 			
 			return changed;

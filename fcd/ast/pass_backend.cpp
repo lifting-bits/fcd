@@ -12,6 +12,8 @@
 #include "pass_backend.h"
 #include "pre_ast_cfg.h"
 
+#include "remill/BC/Version.h"
+
 #include <llvm/ADT/PostOrderIterator.h>
 #include <llvm/ADT/SCCIterator.h>
 #include <llvm/Analysis/DominanceFrontierImpl.h>
@@ -888,8 +890,13 @@ void AstBackEnd::runOnFunction(Function& fn)
 	ensureLoopsExit(*blockGraph);
 	
 	// Compute regions.
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(5, 0)
+	PreAstBasicBlockRegionTraits::DomTreeT domTree;
+	PreAstBasicBlockRegionTraits::PostDomTreeT postDomTree;
+#else
 	PreAstBasicBlockRegionTraits::DomTreeT domTree(false);
 	PreAstBasicBlockRegionTraits::PostDomTreeT postDomTree(true);
+#endif
 	PreAstBasicBlockRegionTraits::DomFrontierT dominanceFrontier;
 	domTree.recalculate(*blockGraph);
 	postDomTree.recalculate(*blockGraph);

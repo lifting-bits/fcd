@@ -21,7 +21,6 @@
 #include <clang/Frontend/TextDiagnosticPrinter.h>
 #include <clang/Lex/PreprocessorOptions.h>
 #include <clang/Index/CodegenNameGenerator.h>
-#include <llvm/IR/CallingConv.h>
 #include <llvm/IR/Function.h>
 #include <llvm/Support/Path.h>
 #include <llvm/Support/PrettyStackTrace.h>
@@ -29,6 +28,9 @@
 #include <dlfcn.h>
 
 #include "remill/BC/Version.h"
+
+#include "fcd/compat/Attributes.h"
+#include "fcd/compat/CallingConvention.h"
 
 using namespace clang;
 using namespace llvm;
@@ -49,7 +51,7 @@ namespace
 		CC_LOOKUP(CC_X86FastCall, X86_FastCall),
 		CC_LOOKUP(CC_X86ThisCall, X86_ThisCall),
 		CC_LOOKUP(CC_X86VectorCall, X86_VectorCall),
-		CC_LOOKUP(CC_X86_64Win64, X86_64_Win64),
+		CC_LOOKUP(CC_Win64, Win64),
 		CC_LOOKUP(CC_X86_64SysV, X86_64_SysV),
 		CC_LOOKUP(CC_AAPCS, ARM_AAPCS),
 		CC_LOOKUP(CC_AAPCS_VFP, ARM_AAPCS_VFP),
@@ -322,10 +324,10 @@ Function* HeaderDeclarations::prototypeForDeclaration(FunctionDecl& decl)
 	}
 	
 	Function* fn = Function::Create(functionType, GlobalValue::ExternalLinkage);
-	fn->addAttributes(AttributeSet::FunctionIndex, AttributeSet::get(module.getContext(), AttributeSet::FunctionIndex, attributeBuilder));
+	fn->addAttributes(AttributeLoc::FunctionIndex, createAttrSet(module.getContext(), AttributeLoc::FunctionIndex, attributeBuilder));
 	if (decl.hasAttr<RestrictAttr>())
 	{
-		fn->addAttribute(AttributeSet::ReturnIndex, Attribute::NoAlias);
+		fn->addAttribute(AttributeLoc::ReturnIndex, Attribute::NoAlias);
 	}
 	
 	// If we know the calling convention, apply it here

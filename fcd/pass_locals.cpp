@@ -11,6 +11,7 @@
 #include "metadata.h"
 #include "passes.h"
 
+#include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/PatternMatch.h>
 
 #include <deque>
@@ -1073,7 +1074,8 @@ namespace
 			{
 				auto allocaInsert = &*fn.getEntryBlock().getFirstInsertionPt();
 				Type* naiveType = llvmFrame->getNaiveType(*root);
-				AllocaInst* stackFrame = new AllocaInst(naiveType, "stackframe", allocaInsert);
+				IRBuilder<> ir(allocaInsert);
+				AllocaInst* stackFrame = ir.CreateAlloca(naiveType, nullptr, "stackframe");
 				md::setStackFrame(*stackFrame);
 				for (auto object : llvmFrame->getAllObjects())
 				{

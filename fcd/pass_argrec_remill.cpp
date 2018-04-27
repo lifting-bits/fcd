@@ -29,6 +29,7 @@
 #include "remill/BC/ABI.h"
 #include "remill/BC/Util.h"
 
+#include "fcd/compat/Attributes.h"
 #include "fcd/pass_argrec_remill.h"
 
 namespace fcd {
@@ -417,9 +418,7 @@ bool RemillArgumentRecovery::runOnModule(llvm::Module &module) {
       auto arg_name = TrimPrefix(arg.getName());
       auto var = remill::FindVarInFunction(func, arg_name);
       arg.takeName(var);
-      arg.removeAttr(
-          llvm::AttributeSet::get(arg.getContext(), arg.getArgNo() + 1,
-                                  {llvm::Attribute::Dereferenceable}));
+      removeAttr(arg, llvm::Attribute::Dereferenceable);
     }
     func->takeName(old_func);
     old_func->replaceAllUsesWith(llvm::UndefValue::get(old_func->getType()));

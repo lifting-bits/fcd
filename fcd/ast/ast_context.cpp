@@ -171,8 +171,7 @@ public:
 		
 		if (auto expression = dyn_cast<ConstantExpr>(&constant))
 		{
-			unique_ptr<Instruction> asInst(expression->getAsInstruction());
-			return ctx.uncachedExpressionFor(*asInst);
+			return ctx.uncachedExpressionFor(*expression->getAsInstruction());
 		}
 		
 		if (auto structure = dyn_cast<ConstantStruct>(&constant))
