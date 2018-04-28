@@ -20,7 +20,13 @@
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/Frontend/TextDiagnosticPrinter.h>
 #include <clang/Lex/PreprocessorOptions.h>
+
+#include "remill/BC/Version.h"
+
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 9)
 #include <clang/Index/CodegenNameGenerator.h>
+#endif
+
 #include <llvm/IR/Function.h>
 #include <llvm/Support/Path.h>
 #include <llvm/Support/PrettyStackTrace.h>
@@ -57,9 +63,13 @@ namespace
 		CC_LOOKUP(CC_AAPCS_VFP, ARM_AAPCS_VFP),
 		CC_LOOKUP(CC_IntelOclBicc, Intel_OCL_BI),
 		CC_LOOKUP(CC_SpirFunction, SPIR_FUNC),
+
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 9)
 		CC_LOOKUP(CC_Swift, Swift),
 		CC_LOOKUP(CC_PreserveMost, PreserveMost),
 		CC_LOOKUP(CC_PreserveAll, PreserveAll),
+#endif
+
 	};
 #undef CC_LOOKUP
 	
@@ -97,7 +107,8 @@ namespace
 		}
 		return info.dli_fname;
 	}
-	
+
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 9)
 	class FunctionDeclarationFinder : public RecursiveASTVisitor<FunctionDeclarationFinder>
 	{
 		index::CodegenNameGenerator& mangler;
@@ -157,7 +168,9 @@ namespace
 			return true;
 		}
 	};
+#endif // LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 9)
 }
+
 
 HeaderDeclarations::HeaderDeclarations(llvm::Module& module, unique_ptr<ASTUnit> tu, vector<string> includedFiles)
 : module(module), tu(move(tu)), includedFiles(move(includedFiles))
@@ -166,6 +179,9 @@ HeaderDeclarations::HeaderDeclarations(llvm::Module& module, unique_ptr<ASTUnit>
 
 unique_ptr<HeaderDeclarations> HeaderDeclarations::create(llvm::Module& module, const vector<string>& searchPath, vector<string> headers, const vector<string>& frameworks, raw_ostream& errors)
 {
+#if LLVM_VERSION_NUMBER < LLVM_VERSION(3, 9)
+	return unique_ptr<HeaderDeclarations>(new HeaderDeclarations(module, nullptr, move(headers)));
+#else
 	if (headers.size() == 0)
 	{
 		// No headers? No problem.
@@ -253,7 +269,7 @@ unique_ptr<HeaderDeclarations> HeaderDeclarations::create(llvm::Module& module, 
 			auto tu = ASTUnit::LoadFromCompilerInvocation(clang, pch, diags, new FileManager(FileSystemOptions()), true);
 #else
 			auto tu = ASTUnit::LoadFromCompilerInvocation(clang.get(), pch, diags, new FileManager(FileSystemOptions()), true);			
-#endif
+#endif // LLVM_VERSION_NUMBER >= LLVM_VERSION(4, 0)
 			if (diagPrinter->getNumErrors() == 0)
 			{
 				if (tu)
@@ -292,6 +308,7 @@ unique_ptr<HeaderDeclarations> HeaderDeclarations::create(llvm::Module& module, 
 		errors << "Couldn't create memory buffer from list of includes!\n";
 	}
 	return nullptr;
+#endif // LLVM_VERSION_NUMBER < LLVM_VERSION(3, 9)
 }
 
 Function* HeaderDeclarations::prototypeForDeclaration(FunctionDecl& decl)

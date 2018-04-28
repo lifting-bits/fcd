@@ -18,11 +18,13 @@
 
 #include "remill/BC/Version.h"
 
-#if LLVM_VERSION_NUMBER < LLVM_VERSION(5, 0)
+#if LLVM_VERSION_NUMBER < LLVM_VERSION(3, 9)
+
+#elif LLVM_VERSION_NUMBER < LLVM_VERSION(5, 0)
 
 #include <llvm/Transforms/Utils/MemorySSA.h>
 
-#elif LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 9)
+#elif LLVM_VERSION_NUMBER >= LLVM_VERSION(5, 0)
 
 #include <llvm/Analysis/MemorySSA.h>
 #include <llvm/Analysis/MemorySSAUpdater.h>

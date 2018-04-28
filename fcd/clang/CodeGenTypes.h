@@ -20,6 +20,8 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/IR/Module.h"
 
+#include "remill/BC/Version.h"
+
 namespace llvm {
 class FunctionType;
 class DataLayout;
@@ -210,10 +212,12 @@ public:
   bool isFuncTypeConvertible(const FunctionType *FT);
   bool isFuncParamTypeConvertible(QualType Ty);
 
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 9)
   /// Determine if a C++ inheriting constructor should have parameters matching
   /// those of its inherited constructor.
   bool inheritingCtorHasParams(const InheritedConstructor &Inherited,
                                CXXCtorType Type);
+#endif
 
   /// GetFunctionTypeForVTable - Get the LLVM function type for use in a vtable,
   /// given a CXXMethodDecl. If the method to has an incomplete return type,
@@ -318,6 +322,7 @@ public:
                                              const FunctionProtoType *FTP,
                                              const CXXMethodDecl *MD);
 
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 9)
   /// "Arrange" the LLVM information for a call or type with the given
   /// signature.  This is largely an internal method; other clients
   /// should use one of the above routines, which ultimately defer to
@@ -331,6 +336,7 @@ public:
                                                 FunctionType::ExtInfo info,
                     ArrayRef<FunctionProtoType::ExtParameterInfo> paramInfos,
                                                 RequiredArgs args);
+#endif
 
   /// \brief Compute a new LLVM record layout object for the given record.
   CGRecordLayout *ComputeRecordLayout(const RecordDecl *D,
