@@ -35,9 +35,15 @@ SET(CMAKE_BUILD_WITH_INSTALL_RPATH true)
 SET(CMAKE_INSTALL_RPATH "${LIBRARY_REPOSITORY_ROOT}/llvm/lib")
 
 # todo: add the following line to cxx-common
+list(APPEND CMAKE_PREFIX_PATH "${PROJECT_SOURCE_DIR}/cmake_modules")
 list(APPEND CMAKE_MODULE_PATH "${TRAILOFBITS_LIBRARIES}/llvm/lib/cmake/clang")
 find_package(LLVM REQUIRED CONFIG)
-find_package(Clang REQUIRED CONFIG)
+
+find_package(Clang)
+if(NOT ${Clang_FOUND})
+  find_package(ClangFallback REQUIRED)
+endif()
+
 find_package(PythonLibs 2.7 REQUIRED)
 find_package(gflags REQUIRED)
 find_package(glog REQUIRED)

@@ -10,11 +10,7 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
-#include <llvm/Analysis/AliasAnalysis.h>
-#include <llvm/Analysis/BasicAliasAnalysis.h>
-#include <llvm/Analysis/Passes.h>
-#include <llvm/Analysis/ScopedNoAliasAA.h>
-#include <llvm/Analysis/TypeBasedAliasAnalysis.h>
+#include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/IR/Verifier.h>
 #include <llvm/IRReader/IRReader.h>
@@ -30,8 +26,12 @@
 #include <string>
 #include <vector>
 
+#include "remill/BC/Util.h"
+
 #include "fcd/ast/ast_passes.h"
 #include "fcd/codegen/translation_context_remill.h"
+#include "fcd/compat/AliasAnalysis.h"
+#include "fcd/compat/AnalysisPasses.h"
 #include "fcd/compat/IPO.h"
 #include "fcd/compat/Scalar.h"
 #include "fcd/header_decls.h"
@@ -347,7 +347,12 @@ int main(int argc, char** argv) {
   std::stringstream ss("");
 
   llvm::EnablePrettyStackTrace();
+
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 7)
   llvm::sys::PrintStackTraceOnErrorSignal(argv[0]);
+#else
+  llvm::sys::PrintStackTraceOnErrorSignal();
+#endif
 
   google::InitGoogleLogging(argv[0]);
   google::SetUsageMessage(ss.str());
@@ -391,9 +396,7 @@ int main(int argc, char** argv) {
   // step 1: create annotated module from executable (or load it from .ll)
   if (FLAGS_module_in) {
     LOG(INFO) << "Parsing IR from " << inputFile;
-    llvm::SMDiagnostic errs;
-    module = llvm::parseIRFile(inputFile, errs, llvm);
-    CHECK(module) << "Failed to parse input file: " << errs.getMessage().str();
+    module.reset(remill::LoadModuleFromFile(&llvm, inputFile, false));
   } else {
     LOG(INFO) << "Parsing executable " << inputFile;
 

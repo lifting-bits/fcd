@@ -17,6 +17,7 @@
 #include <llvm/ADT/SmallVector.h>
 
 #include <deque>
+#include <vector>
 #include <unordered_map>
 #include <unordered_set>
 #include <set>
@@ -56,14 +57,14 @@ public:
 class LivenessAnalysis
 {
 	std::deque<Expression*> assignedExpressions;
-	std::unordered_map<Expression*, llvm::SmallVector<ExpressionUseRoot, 16>> usingStatements;
+	std::unordered_map<Expression*, std::vector<ExpressionUseRoot>> usingStatements;
 	std::unordered_map<Statement*, size_t> statementStartIndices;
 	std::unordered_map<Statement*, size_t> statementEndIndices;
 	std::set<size_t> memoryOperations;
 	std::deque<Statement*> flatStatements;
 	
 	// intermediate dictionary, gets cleared at some point
-	std::unordered_map<Expression*, llvm::SmallVector<AssignableUseDef, 16>> usesDefs;
+	std::unordered_map<Expression*, std::vector<AssignableUseDef>> usesDefs;
 	
 	std::unordered_set<Statement*> getStatements(ExpressionUse& expressionUse);
 	void collectAssignments(Statement* statement, ExpressionUser::iterator iter, ExpressionUser::iterator end);

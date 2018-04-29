@@ -23,9 +23,6 @@
 #include <llvm/IR/Verifier.h>
 
 #include <llvm/Analysis/AliasAnalysis.h>
-#include <llvm/Analysis/BasicAliasAnalysis.h>
-#include <llvm/Analysis/ScopedNoAliasAA.h>
-#include <llvm/Analysis/TypeBasedAliasAnalysis.h>
 
 #include <sstream>
 #include <string>
@@ -34,6 +31,7 @@
 
 #include "fcd/compat/IPO.h"
 #include "fcd/compat/Scalar.h"
+#include "fcd/compat/AnalysisPasses.h"
 
 #include "fcd/codegen/translation_context_remill.h"
 #include "fcd/pass_argrec_remill.h"

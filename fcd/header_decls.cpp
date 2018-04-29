@@ -7,6 +7,9 @@
 // license. See LICENSE.md for details.
 //
 
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
 #include "header_decls.h"
 
 #include "CodeGenTypes.h"
@@ -21,12 +24,6 @@
 #include <clang/Frontend/TextDiagnosticPrinter.h>
 #include <clang/Lex/PreprocessorOptions.h>
 
-#include "remill/BC/Version.h"
-
-#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 9)
-#include <clang/Index/CodegenNameGenerator.h>
-#endif
-
 #include <llvm/IR/Function.h>
 #include <llvm/Support/Path.h>
 #include <llvm/Support/PrettyStackTrace.h>
@@ -34,6 +31,10 @@
 #include <dlfcn.h>
 
 #include "remill/BC/Version.h"
+
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 9)
+#include <clang/Index/CodegenNameGenerator.h>
+#endif
 
 #include "fcd/compat/Attributes.h"
 #include "fcd/compat/CallingConvention.h"
@@ -56,13 +57,17 @@ namespace
 		CC_LOOKUP(CC_X86StdCall, X86_StdCall),
 		CC_LOOKUP(CC_X86FastCall, X86_FastCall),
 		CC_LOOKUP(CC_X86ThisCall, X86_ThisCall),
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 6)
 		CC_LOOKUP(CC_X86VectorCall, X86_VectorCall),
+#endif
 		CC_LOOKUP(CC_Win64, Win64),
 		CC_LOOKUP(CC_X86_64SysV, X86_64_SysV),
 		CC_LOOKUP(CC_AAPCS, ARM_AAPCS),
 		CC_LOOKUP(CC_AAPCS_VFP, ARM_AAPCS_VFP),
 		CC_LOOKUP(CC_IntelOclBicc, Intel_OCL_BI),
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 7)
 		CC_LOOKUP(CC_SpirFunction, SPIR_FUNC),
+#endif
 
 #if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 9)
 		CC_LOOKUP(CC_Swift, Swift),
@@ -180,6 +185,7 @@ HeaderDeclarations::HeaderDeclarations(llvm::Module& module, unique_ptr<ASTUnit>
 unique_ptr<HeaderDeclarations> HeaderDeclarations::create(llvm::Module& module, const vector<string>& searchPath, vector<string> headers, const vector<string>& frameworks, raw_ostream& errors)
 {
 #if LLVM_VERSION_NUMBER < LLVM_VERSION(3, 9)
+	LOG(ERROR) << "Header declaration parsing is only available for LLVM 3.9 and higher";
 	return unique_ptr<HeaderDeclarations>(new HeaderDeclarations(module, nullptr, move(headers)));
 #else
 	if (headers.size() == 0)
@@ -334,19 +340,22 @@ Function* HeaderDeclarations::prototypeForDeclaration(FunctionDecl& decl)
 		attributeBuilder.addAttribute(Attribute::ReadOnly);
 		attributeBuilder.addAttribute(Attribute::NoUnwind);
 	}
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 8)
 	if (decl.hasAttr<NoAliasAttr>())
 	{
 		attributeBuilder.addAttribute(Attribute::ArgMemOnly);
 		attributeBuilder.addAttribute(Attribute::NoUnwind);
 	}
+#endif
 	
 	Function* fn = Function::Create(functionType, GlobalValue::ExternalLinkage);
 	fn->addAttributes(AttributeLoc::FunctionIndex, createAttrSet(module.getContext(), AttributeLoc::FunctionIndex, attributeBuilder));
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 7)
 	if (decl.hasAttr<RestrictAttr>())
 	{
 		fn->addAttribute(AttributeLoc::ReturnIndex, Attribute::NoAlias);
 	}
-	
+#endif
 	// If we know the calling convention, apply it here
 	auto prototype = decl.getType()->getCanonicalTypeUnqualified().getAs<FunctionProtoType>();
 	auto callingConvention = lookupCallingConvention(prototype->getExtInfo().getCC());

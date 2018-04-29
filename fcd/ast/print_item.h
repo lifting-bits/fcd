@@ -16,6 +16,7 @@
 
 #include <deque>
 #include <string>
+#include <memory>
 
 class PrintableScope;
 

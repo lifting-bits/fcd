@@ -92,8 +92,10 @@ namespace
 	ElfExecutableFactory elfFactory;
 	FlatBinaryExecutableFactory flatBinaryFactory;
 	PythonExecutableFactory pythonScriptExecutableFactory;
-	
+
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 7)
 	class ExecutableFactoryParser : public cl::generic_parser_base
+
 	{
 		struct OptionInfo : public GenericOptionInfo
 		{
@@ -187,7 +189,12 @@ namespace
 	);
 	
 	cl::alias formatA("f", cl::desc("Alias for --format"), cl::aliasopt(executableFactory), whitelist());
+#else
+	ExecutableFactory* executableFactory = &autoFactory;
+#endif // LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 7)
 }
+
+
 
 string Executable::getTargetTriple() const
 {

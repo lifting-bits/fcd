@@ -67,8 +67,8 @@ class DumbAllocator
 			return nullptr;
 		}
 		
-		size_t requiredSize;
-		if (__builtin_add_overflow(size, alignment - 1, &requiredSize))
+		unsigned long long requiredSize;
+		if (__builtin_uaddll_overflow(size, alignment - 1, &requiredSize))
 		{
 			return nullptr;
 		}

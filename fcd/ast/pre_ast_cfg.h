@@ -285,6 +285,11 @@ class PABBNodesIter : public std::iterator<std::input_iterator_tag, PreAstBasicB
 		{
 			return !(base == that.base);
 		}
+
+		operator PreAstBasicBlock*()
+		{
+			return operator*();
+		}
 };
 
 template<>
@@ -335,7 +340,7 @@ struct llvm::GraphTraits<llvm::Inverse<PreAstBasicBlock*>>
 
 struct PreAstContextGraphTraits
 {
-#if LLVM_VERSION_NUMBER >= LLVM_VERSION(4, 0)
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(4, 0) || LLVM_VERSION_NUMBER <= LLVM_VERSION(3, 7)
 	typedef PABBNodesIter nodes_iterator;
 #else
 	typedef std::deque<PreAstBasicBlock>::iterator nodes_iterator;
@@ -343,7 +348,7 @@ struct PreAstContextGraphTraits
 	
 	static nodes_iterator nodes_begin(PreAstContext* f)
 	{
-#if LLVM_VERSION_NUMBER >= LLVM_VERSION(4, 0)
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(4, 0) || LLVM_VERSION_NUMBER <= LLVM_VERSION(3, 7)
 		return PABBNodesIter(f->begin());
 #else
 		return f->begin();
@@ -352,7 +357,7 @@ struct PreAstContextGraphTraits
 	
 	static nodes_iterator nodes_end(PreAstContext* f)
 	{
-#if LLVM_VERSION_NUMBER >= LLVM_VERSION(4, 0)
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(4, 0) || LLVM_VERSION_NUMBER <= LLVM_VERSION(3, 7)
 		return PABBNodesIter(f->end());
 #else
 		return f->end();
@@ -386,6 +391,8 @@ struct llvm::GraphTraits<llvm::Inverse<PreAstContext*>>
 	using PreAstContextGraphTraits::getEntryNode;
 };
 
+#if LLVM_VERSION_NUMBER > LLVM_VERSION(3, 7)
+
 template<>
 struct llvm::GraphTraits<PreAstBasicBlockRegionTraits::DomTreeNodeT*>
 : public llvm::DomTreeGraphTraitsBase<PreAstBasicBlockRegionTraits::DomTreeNodeT, PreAstBasicBlockRegionTraits::DomTreeNodeT::iterator>
@@ -397,5 +404,7 @@ struct llvm::GraphTraits<const PreAstBasicBlockRegionTraits::DomTreeNodeT*>
 : public llvm::DomTreeGraphTraitsBase<const PreAstBasicBlockRegionTraits::DomTreeNodeT, PreAstBasicBlockRegionTraits::DomTreeNodeT::const_iterator>
 {
 };
+
+#endif
 
 #endif /* pre_ast_cfg_hpp */

@@ -125,12 +125,12 @@ namespace
 	
 	struct ConjunctionEntry
 	{
-		SmallVector<Expression*, 4> expressions;
+		std::vector<Expression*> expressions;
 	};
 	
-	SmallVector<Expression*, 4> splitNaryOperator(Expression& expr, NAryOperatorExpression::NAryOperatorType type)
+	std::vector<Expression*> splitNaryOperator(Expression& expr, NAryOperatorExpression::NAryOperatorType type)
 	{
-		SmallVector<Expression*, 4> result;
+		std::vector<Expression*> result;
 		if (auto nary = dyn_cast<NAryOperatorExpression>(&expr))
 		{
 			if (nary->getType() == type)
@@ -155,9 +155,9 @@ namespace
 		// (The function relies on the format of the conditionals that reaching conditions create: it's absolutely not
 		// a general-purpose expression simplification algorithm.)
 		
-		SmallVector<ConjunctionEntry, 4> inputConjunctions;
-		SmallVector<size_t, 4> sizeOneConjunctions;
-		SmallVector<size_t, 4> largerConjunctions;
+		std::vector<ConjunctionEntry> inputConjunctions;
+		std::vector<size_t> sizeOneConjunctions;
+		std::vector<size_t> largerConjunctions;
 		for (auto iter = begin; iter != end; ++iter)
 		{
 			size_t index = inputConjunctions.size();
@@ -178,7 +178,7 @@ namespace
 			}
 		}
 		
-		SmallVector<NOT_NULL(Expression), 4> resultExpressions;
+		std::vector<NOT_NULL(Expression)> resultExpressions;
 		if (sizeOneConjunctions.size() > 0)
 		{
 			do
@@ -223,7 +223,7 @@ namespace
 				
 				// The simplest and most reasonable thing to do is th simplify for expressions that are present in
 				// every remaining expressions. This is not a perfect solution, but the problem is NP-complete, so yeah.
-				SmallVector<Expression*, 1> commonSubExpressions;
+				std::vector<Expression*> commonSubExpressions;
 				for (const auto& pair : occurrences)
 				{
 					if (pair.second == largerConjunctions.size())
@@ -234,7 +234,7 @@ namespace
 				
 				if (commonSubExpressions.size() > 0)
 				{
-					SmallVector<Expression*, 4> remainingConjunctions;
+					std::vector<Expression*> remainingConjunctions;
 					for (auto conjunctionIndex : largerConjunctions)
 					{
 						auto& expressions = inputConjunctions[conjunctionIndex].expressions;
@@ -359,7 +359,7 @@ namespace
 			// Fold blocks into one sequence. This is easy now that we can just iterate over the region range, which is
 			// sorted in post order.
 			StatementReference resultSequence;
-			SmallDenseMap<PreAstBasicBlock*, SmallVector<SmallVector<Expression*, 4>, 8>> reachingConditions;
+			SmallDenseMap<PreAstBasicBlock*, std::vector<std::vector<Expression*>>> reachingConditions;
 			
 			// Do we have loops?
 			bool isLoop = false;
@@ -478,7 +478,7 @@ namespace
 					}
 					
 					// Create OR-joined condition with condition parts after the prefix.
-					SmallVector<Expression*, 4> disjunctionTerms;
+					std::vector<Expression*> disjunctionTerms;
 					for (auto& andSequence : disjunction)
 					{
 						if (andSequence.size() != commonPrefix.size() + commonSuffix.size())
@@ -539,7 +539,7 @@ namespace
 			unordered_set<PreAstBasicBlock*> regionNodes { *entry };
 			deque<PreAstBasicBlock*> orderedLoopNodes;
 			deque<PreAstBasicBlock*> orderedRegionNodes { *entry };
-			SmallVector<PreAstBasicBlockEdge*, 4> backEdges;
+			std::vector<PreAstBasicBlockEdge*> backEdges;
 			deque<DfsStackItem> dfsStack;
 			dfsStack.emplace_back(**entry);
 			
@@ -603,8 +603,8 @@ namespace
 			// you want deterministic output. Revisit later if necessary.
 			
 			// Collect entering and exiting edges.
-			SmallVector<PreAstBasicBlockEdge*, 4> exitingEdges;
-			SmallVector<PreAstBasicBlockEdge*, 4> enteringEdges(backEdges.begin(), backEdges.end());
+			std::vector<PreAstBasicBlockEdge*> exitingEdges;
+			std::vector<PreAstBasicBlockEdge*> enteringEdges(backEdges.begin(), backEdges.end());
 			for (PreAstBasicBlock* block : orderedLoopNodes)
 			{
 				for (PreAstBasicBlockEdge* edge : block->predecessors)
@@ -667,7 +667,7 @@ namespace
 				if (&edge != &exitingEdges.front() && edge->to != exitingEdges.front()->to)
 				{
 					PreAstBasicBlock* exitBlock = &function.createRedirectorBlock(exitingEdges);
-					loopExit = blocksInReversePostOrder.insert(find(blocksInReversePostOrder, exitingEdges.back()->from), exitBlock);
+					loopExit = blocksInReversePostOrder.insert(find(blocksInReversePostOrder.begin(), blocksInReversePostOrder.end(), exitingEdges.back()->from), exitBlock);
 					break;
 				}
 			}
@@ -777,7 +777,7 @@ namespace
 		
 		StatementReference structurizeFunction()
 		{
-			for (PreAstBasicBlock* entry : post_order(&function))
+			for (PreAstBasicBlock* entry : llvm::make_range(po_begin(&function), po_end(&function)))
 			{
 				blocksInReversePostOrder.push_front(entry);
 				

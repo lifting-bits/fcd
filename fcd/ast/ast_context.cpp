@@ -11,6 +11,8 @@
 #include "expressions.h"
 #include "metadata.h"
 
+#include "remill/BC/Version.h"
+
 #include <llvm/IR/InstVisitor.h>
 
 #include <deque>
@@ -254,7 +256,7 @@ public:
 	
 	VISIT(CallInst)
 	{
-		SmallVector<Value*, 8> values(inst.arg_begin(), inst.arg_end());
+		SmallVector<Value*, 8> values(inst.arg_operands().begin(), inst.arg_operands().end());
 		return callFor(valueFor(*inst.getCalledValue()), values);
 	}
 	
@@ -414,7 +416,8 @@ public:
 		// special case for index 0, since baseType is not a pointer type (but GEP operand 0 operates on a pointer type)
 		Expression* result = ctx.subscript(valueFor(*inst.getPointerOperand()), valueFor(*indices[0]));
 		
-		Type* baseType = inst.getSourceElementType();
+		Type* baseType = cast<PointerType>(inst.getPointerOperandType())->getElementType();
+
 		ArrayRef<Value*> rawIndices = indices;
 		for (unsigned i = 1; i < indices.size(); ++i)
 		{
@@ -573,7 +576,11 @@ AstContext::AstContext(DumbAllocator& pool, Module* module)
 	if (module != nullptr)
 	{
 		auto& llvmCtx = module->getContext();
+#if LLVM_VERSION_NUMBER <= LLVM_VERSION(3, 6)
+		const DataLayout& dl = *module->getDataLayout();
+#else
 		const DataLayout& dl = module->getDataLayout();
+#endif
 		auto voidTy = Type::getVoidTy(llvmCtx);
 		auto i8Ty = Type::getInt8Ty(llvmCtx);
 		auto i8PtrTy = Type::getInt8PtrTy(llvmCtx);
@@ -728,7 +735,7 @@ const ExpressionType& AstContext::getType(Type &type)
 	{
 		// We lose parameter names doing this.
 		auto& result = createFunction(getType(*funcType->getReturnType()));
-		for (Type* param : funcType->params())
+		for (Type* param : llvm::make_range(funcType->param_begin(), funcType->param_end())) //funcType->params()
 		{
 			result.append(getType(*param), "");
 		}

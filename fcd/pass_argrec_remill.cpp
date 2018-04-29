@@ -239,7 +239,7 @@ static void UpdateCalls(llvm::Function *old_func, llvm::Function *new_func,
                         CallingConvention &cc) {
   llvm::IRBuilder<> ir(new_func->getContext());
   for (auto old_call : remill::CallersOf(old_func)) {
-    auto caller = old_call->getFunction();
+    auto caller = old_call->getParent()->getParent();
     if (caller->getName().startswith(sPrefix)) {
       ir.SetInsertPoint(old_call);
       std::vector<llvm::Value *> params;
@@ -270,7 +270,7 @@ static llvm::Function *DeclareParametrizedFunc(llvm::Function *func,
   // Get parameter regs from the callconv. Also add the stack pointer reg,
   // since it's used to access parameters passed by stack. Also add aliases.
   auto cc_regs = cc.ParamRegs();
-  auto ilist = llvm::instructions(func);
+  auto ilist = llvm::make_range(llvm::inst_begin(func), llvm::inst_end(func));
   cc_regs.insert(cc_regs.begin(), cc.StackPointerVarName());
   for (auto reg : cc_regs) {
     auto user = FirstUserOfReg(func, reg, ilist);

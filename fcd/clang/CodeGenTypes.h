@@ -83,13 +83,20 @@ inline StructorType getFromCtorType(CXXCtorType T) {
   switch (T) {
   case Ctor_Complete:
     return StructorType::Complete;
+
   case Ctor_Base:
     return StructorType::Base;
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 6)
   case Ctor_Comdat:
     llvm_unreachable("not expecting a COMDAT");
+#endif
+  
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 7)
   case Ctor_CopyingClosure:
   case Ctor_DefaultClosure:
     llvm_unreachable("not expecting a closure");
+#endif
+  
   }
   llvm_unreachable("not a CXXCtorType");
 }
@@ -114,8 +121,10 @@ inline StructorType getFromDtorType(CXXDtorType T) {
     return StructorType::Complete;
   case Dtor_Base:
     return StructorType::Base;
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 6)  
   case Dtor_Comdat:
     llvm_unreachable("not expecting a COMDAT");
+#endif
   }
   llvm_unreachable("not a CXXDtorType");
 }
@@ -176,7 +185,11 @@ public:
   ~CodeGenTypes();
 
   const llvm::DataLayout &getDataLayout() const {
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 7)
     return TheModule.getDataLayout();
+#else
+  return *TheModule.getDataLayout();
+#endif
   }
   ASTContext &getContext() const { return Context; }
   const ABIInfo &getABIInfo() const { return TheABIInfo; }
