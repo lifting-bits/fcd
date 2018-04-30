@@ -35,7 +35,7 @@ SET(CMAKE_BUILD_WITH_INSTALL_RPATH true)
 SET(CMAKE_INSTALL_RPATH "${LIBRARY_REPOSITORY_ROOT}/llvm/lib")
 
 # todo: add the following line to cxx-common
-list(APPEND CMAKE_PREFIX_PATH "${PROJECT_SOURCE_DIR}/cmake_modules")
+list(APPEND CMAKE_PREFIX_PATH "${PROJECT_SOURCE_DIR}/cmake")
 list(APPEND CMAKE_MODULE_PATH "${TRAILOFBITS_LIBRARIES}/llvm/lib/cmake/clang")
 find_package(LLVM REQUIRED CONFIG)
 

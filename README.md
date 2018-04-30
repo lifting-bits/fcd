@@ -34,7 +34,8 @@ Most of Fcd+Remill's dependencies can be provided by the [cxx-common](https://gi
 | [LLVM](http://llvm.org/) | 3.5 - 5.0 |
 | [Clang](http://clang.llvm.org/) | 3.5 - 5.0 |
 | [Remill](https://github.com/trailofbits/remill) | Latest |
-| [Python](https://www.python.org/) | 2.7 | 
+| [Python](https://www.python.org/) | 2.7 |
+| Zlib | Latest |
 | Unzip | Latest |
 
 ## Getting and Building the Code
@@ -54,7 +55,8 @@ sudo apt-get install \
      realpath \
      build-essential \
      libtinfo-dev \
-    #  libz-dev \
+     python-dev \
+     libz-dev \
      lsb-release
 ```
 
@@ -69,7 +71,7 @@ git clone https://github.com/trailofbits/fcd.git
 Finally, we build Remill along with Fcd. This script will create another directory, `remill-build`, in the current working directory. All remaining dependencies needed by Remill will be built in the `remill-build` directory.
 
 ```shell
-cd ..
+cd ../../
 ./remill/scripts/build.sh
 ```
 
