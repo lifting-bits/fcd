@@ -22,7 +22,7 @@ Fcd+Remill is supported on Linux platforms and has been tested on Ubuntu 16.04.
 
 ## Dependencies
 
-Most of Fcd+Remill's dependencies can be provided by the [cxx-common](https://github.com/trailofbits/cxx-common) repository. Trail of Bits hosts downloadable, pre-built versions of cxx-common, which makes it substantially easier to get up and running with Remill. Nonetheless, the following table represents most of Remill's dependencies.
+Most of Fcd+Remill's dependencies can be provided by the [cxx-common](https://github.com/trailofbits/cxx-common) repository. Trail of Bits hosts downloadable, pre-built versions of cxx-common, which makes it substantially easier to get up and running with Remill. Nonetheless, the following table represents most of Fcd+Remill's dependencies.
 
 | Name | Version | 
 | ---- | ------- |
@@ -35,7 +35,7 @@ Most of Fcd+Remill's dependencies can be provided by the [cxx-common](https://gi
 | [Clang](http://clang.llvm.org/) | 3.5 - 5.0 |
 | [Remill](https://github.com/trailofbits/remill) | Latest |
 | [Python](https://www.python.org/) | 2.7 |
-| Zlib | Latest |
+| [Zlib](https://www.zlib.net/) | Latest |
 | Unzip | Latest |
 
 ## Getting and Building the Code
