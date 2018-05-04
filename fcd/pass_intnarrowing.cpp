@@ -7,9 +7,17 @@
 // license. See LICENSE.md for details.
 //
 
-#include "passes.h"
+#include <gflags/gflags.h>
+#include <glog/logging.h>
 
+#include "remill/BC/Version.h"
+
+#include "fcd/passes.h"
+
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 8)
 #include <llvm/Analysis/DemandedBits.h>
+#endif
+
 #include <llvm/IR/Constants.h>
 
 #include <unordered_map>
@@ -20,7 +28,7 @@ using namespace std;
 
 namespace
 {
-	bool isMod2Equivalent(BinaryOperator::BinaryOps operation)
+	static bool isMod2Equivalent(BinaryOperator::BinaryOps operation)
 	{
 		switch (operation)
 		{
@@ -36,6 +44,7 @@ namespace
 			default: return true;
 		}
 	}
+}
 	
 	struct IntNarrowing : public FunctionPass
 	{
@@ -47,15 +56,16 @@ namespace
 		IntNarrowing() : FunctionPass(ID)
 		{
 		}
-		
-		virtual StringRef getPassName() const override
-		{
-			return "Narrow Integers";
-		}
-		
+
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 8)
+
 		virtual void getAnalysisUsage(AnalysisUsage& au) const override
 		{
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 9)
 			au.addRequired<DemandedBitsWrapperPass>();
+#else		
+			au.addRequired<DemandedBits>();
+#endif
 		}
 		
 		Value* narrowDown(Value* thatValue, unsigned size)
@@ -104,8 +114,13 @@ namespace
 		{
 			resized.clear();
 			currentFunction = &fn;
+
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 9)
 			DemandedBits& db = getAnalysis<DemandedBitsWrapperPass>().getDemandedBits();
-			
+#else		
+			DemandedBits& db = getAnalysis<DemandedBits>();
+#endif
+
 			for (BasicBlock& bb : fn)
 			{
 				for (Instruction& inst : bb)
@@ -162,8 +177,13 @@ namespace
 			
 			return resized.size() > 0;
 		}
+#else
+		virtual bool runOnFunction(Function& f) override
+		{
+			CHECK(false) << "LLVM 3.8 required because of DemandedBits analysis";
+		}
+#endif
 	};
 	
 	char IntNarrowing::ID = 0;
 	RegisterPass<IntNarrowing> intNarrowing("intnarrowing", "Narrow down integer types to their used bits");
-}

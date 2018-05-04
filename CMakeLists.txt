@@ -1,139 +1,109 @@
-cmake_minimum_required(VERSION 3.2)
+# Copyright (c) 2017 Trail of Bits, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 project(fcd)
+cmake_minimum_required (VERSION 3.2)
 
-if (NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    message(SEND_ERROR "clang is required to build")
-endif()
+set(FCD_SOURCE_DIR "${PROJECT_SOURCE_DIR}")
 
-if(DEFINED ENV{TRAILOFBITS_LIBRARIES})
-    set(LIBRARY_REPOSITORY_ROOT $ENV{TRAILOFBITS_LIBRARIES}
-    CACHE PATH "Location of cxx-common libraries.")
-endif ()
+# add fallback clang detection 
+list(APPEND CMAKE_PREFIX_PATH "${PROJECT_SOURCE_DIR}/cmake")
 
-if (DEFINED LIBRARY_REPOSITORY_ROOT)
-    set(TOB_CMAKE_INCLUDE "${LIBRARY_REPOSITORY_ROOT}/cmake_modules/repository.cmake")
-    if (NOT EXISTS "${TOB_CMAKE_INCLUDE}")
-        message(FATAL_ERROR "The library repository could not be found!")
-    endif ()
-
-    message(STATUS "Using the following library repository: ${LIBRARY_REPOSITORY_ROOT}")
-	include("${TOB_CMAKE_INCLUDE}")
-else ()
-    message(FATAL_ERROR "Please define the TRAILOFBITS_LIBRARIES environment variable!")
-endif ()
-
-if (NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-	message(SEND_ERROR "clang is required to build")
-endif()
-
-set(CMAKE_BUILD_TYPE Debug)
+# C++ standard
+# todo(msurovic): remove this once AST code is refactored
 set(CMAKE_CXX_STANDARD 14)
 
-SET(CMAKE_SKIP_BUILD_RPATH false)
-SET(CMAKE_BUILD_WITH_INSTALL_RPATH true) 
-SET(CMAKE_INSTALL_RPATH "${LIBRARY_REPOSITORY_ROOT}/llvm/lib")
+# warnings and compiler settings
+# todo(msurovic): enable once AST code is refactored
+# set(PROJECT_CXXWARNINGS "-Wall -Wextra -Werror -Wconversion -pedantic -Wno-unused-parameter -Wno-c++98-compat -Wno-unreachable-code-return -Wno-nested-anon-types -Wno-extended-offsetof -Wno-gnu-anonymous-struct -Wno-gnu-designator -Wno-variadic-macros -Wno-gnu-zero-variadic-macro-arguments -Wno-gnu-statement-expression -Wno-return-type-c-linkage -Wno-c99-extensions -Wno-ignored-attributes -Wno-unused-local-typedef")
 
-# todo: add the following line to cxx-common
-list(APPEND CMAKE_MODULE_PATH "${TRAILOFBITS_LIBRARIES}/llvm/lib/cmake/clang")
-find_package(LLVM 4.0 REQUIRED CONFIG)
-find_package(Clang REQUIRED CONFIG)
+set(PROJECT_CXXFLAGS "${PROJECT_CXXFLAGS} -Wno-unknown-warning-option ${PROJECT_CXXWARNINGS} -fPIC -fno-omit-frame-pointer -fvisibility-inlines-hidden -fno-exceptions -fno-asynchronous-unwind-tables -fno-rtti")
+
+#
+# clang libs
+#
+find_package(Clang)
+if(NOT ${Clang_FOUND})
+  find_package(ClangFallback REQUIRED)
+endif()
+
+set(CLANG_LIBS libclang clangIndex clangCodeGen)
+list(APPEND PROJECT_LIBRARIES ${CLANG_LIBS})
+
+# hack: rpath magic for libclang.so
+# todo(msurovic): remove this if libClang is replaced by libTooling
+set(CMAKE_SKIP_BUILD_RPATH false)
+set(CMAKE_BUILD_WITH_INSTALL_RPATH true) 
+set(CMAKE_INSTALL_RPATH "${LIBRARY_REPOSITORY_ROOT}/llvm/lib")
+
+#
+# python libs
+#
 find_package(PythonLibs 2.7 REQUIRED)
-find_package(gflags REQUIRED)
-find_package(glog REQUIRED)
+list(APPEND PROJECT_INCLUDEDIRECTORIES ${PYTHON_INCLUDE_PATH})
+list(APPEND PROJECT_LIBRARIES ${PYTHON_LIBRARIES})
 
-# hack: manually import the libclang.so library; the libclang target exported by the
-# find_packge script does not work...
-add_library(clanglib SHARED IMPORTED)
-set_target_properties(clanglib PROPERTIES IMPORTED_LOCATION "${TRAILOFBITS_LIBRARIES}/llvm/lib/libclang.so")
+#
+# target settings
+#
+set(FCD fcd-${REMILL_LLVM_VERSION})
 
-message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION} @ ${LLVM_DIR}")
-message(STATUS "Found Python ${PYTHONLIBS_VERSION_STRING} @ ${PYTHON_INCLUDE_PATH}")
-
-### emulator ###
-
-# file(GLOB_RECURSE emulatorsources ${PROJECT_SOURCE_DIR}/fcd/*.emulator.cpp)
-
-# set(INCBIN_TEMPLATE ${PROJECT_SOURCE_DIR}/fcd/cpu/incbin.${CMAKE_SYSTEM_NAME}.tpl)
-# foreach(emulatorsource ${emulatorsources})
-#     string(REGEX REPLACE ".+/([^/]+)\.emulator\.cpp" "\\1" emulator_isa "${emulatorsource}")
-#     add_custom_command(OUTPUT "${PROJECT_BINARY_DIR}/${emulator_isa}.emulator.s"
-#                        COMMAND "${CMAKE_CXX_COMPILER}" -c -emit-llvm --std=gnu++14 -O3 "${emulatorsource}" -o "${PROJECT_BINARY_DIR}/${emulator_isa}.emulator.bc"
-#                        COMMAND sed -e "s/{CPU}/${emulator_isa}/" ${INCBIN_TEMPLATE} > "${PROJECT_BINARY_DIR}/${emulator_isa}.emulator.s"
-#                        DEPENDS "${emulatorsource}"
-#                        IMPLICIT_DEPENDS CXX "${emulatorsource}"
-#                        )
-#     set(emuasms ${emuasms} "${PROJECT_BINARY_DIR}/${emulator_isa}.emulator.s")
-# endforeach()
-# enable_language(ASM)
-# add_library(emu OBJECT ${emuasms})
-
-### fcd ###
-set(subdirs fcd/ fcd/ast fcd/callconv fcd/clang fcd/codegen fcd/cpu fcd/executables fcd/symbols)
+#
+# old fcd stuff
+#
+# todo(msurovic): remove this once python bindings and header parsing are refactored
+set(subdirs fcd/ fcd/ast fcd/callconv fcd/clang fcd/codegen fcd/executables fcd/symbols)
 set(pythonbindingsfile "${CMAKE_CURRENT_BINARY_DIR}/bindings.cpp")
 set(subdirs ${subdirs} fcd/python)
-add_custom_command(OUTPUT ${pythonbindingsfile}
-                   COMMAND "${CMAKE_C_COMPILER}" -E ${LLVM_DEFINITIONS} -isystem ${LLVM_INCLUDE_DIRS} "${LLVM_INCLUDE_DIRS}/llvm-c/Core.h" | python "${PROJECT_SOURCE_DIR}/fcd/python/bindings.py" > ${pythonbindingsfile})
-
-### header search paths file ###
+list(APPEND PROJECT_INCLUDEDIRECTORIES ${subdirs})
+add_custom_command(OUTPUT ${pythonbindingsfile} COMMAND "${CMAKE_C_COMPILER}" -E ${LLVM_DEFINITIONS} -isystem ${LLVM_INCLUDE_DIRS} "${LLVM_INCLUDE_DIRS}/llvm-c/Core.h" | python "${PROJECT_SOURCE_DIR}/fcd/python/bindings.py" > ${pythonbindingsfile})
 execute_process(COMMAND "${CMAKE_CXX_COMPILER}" -E -x c++ -v /dev/null OUTPUT_VARIABLE dummy ERROR_VARIABLE defaultHeaderSearchPathList)
 string(REGEX REPLACE ".*#include <...> search starts here:\n(.+)\nEnd of search list.*" "\\1" defaultHeaderSearchPathList "${defaultHeaderSearchPathList}")
 string(REGEX REPLACE " (/[^\n]+)" "\"\\1\"," defaultHeaderSearchPathList "${defaultHeaderSearchPathList}")
 set(defaultFrameworkSearchPathList)
 configure_file(fcd/systemIncludePath.cpp.tmpl "${CMAKE_CURRENT_BINARY_DIR}/systemIncludePath.cpp")
-
-# collect files
 file(GLOB_RECURSE sources fcd/*.cpp)
-file(GLOB_RECURSE headers fcd/*.h)
+list(APPEND sources ${pythonbindingsfile})
+list(APPEND sources "${CMAKE_CURRENT_BINARY_DIR}/systemIncludePath.cpp")
 
-# remove emulators
-# string(REGEX REPLACE "[^;]+.emulator.cpp;?" "" sources "${sources}")
+#
+# add fcd target
+#
+# todo(msurovic): enable once AST code is refactored
+add_executable(${FCD} ${sources}
+    # mcsema/Arch/ABI.cpp
+    # mcsema/Arch/Arch.cpp
 
-add_executable(fcd ${sources} ${headers} ${pythonbindingsfile} "${CMAKE_CURRENT_BINARY_DIR}/systemIncludePath.cpp")
+    # mcsema/CFG/CFG.cpp
 
-# NDEBUG must match llvm's build or it will crash
-if (${LLVM_ENABLE_ASSERTIONS})
-    target_compile_options(fcd PRIVATE -UNDEBUG)
-else()
-    target_compile_definitions(fcd PRIVATE -DNDEBUG)
-endif()
+    # mcsema/BC/Callback.cpp
+    # mcsema/BC/External.cpp
+    # mcsema/BC/Function.cpp
+    # mcsema/BC/Instruction.cpp
+    # mcsema/BC/Legacy.cpp
+    # mcsema/BC/Lift.cpp
+    # mcsema/BC/Optimize.cpp
+    # mcsema/BC/Segment.cpp
+    # mcsema/BC/Util.cpp
 
-target_compile_definitions(fcd PRIVATE ${LLVM_DEFINITIONS} FCD_DEBUG=1)
-target_include_directories(fcd PRIVATE ${subdirs})
-target_include_directories(fcd SYSTEM PUBLIC ${PROJECT_INCLUDEDIRECTORIES})
-target_include_directories(fcd SYSTEM PUBLIC ${PROJECT_SOURCE_DIR})
-target_include_directories(fcd SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${PYTHON_INCLUDE_DIRS})
-
-target_compile_options(fcd PRIVATE --system-header-prefix=llvm/ --system-header-prefix=clang/ --system-header-prefix=clang-c/)
-target_compile_options(fcd PRIVATE -Wall -Werror=conversion -Wno-error=sign-conversion -Wshadow -Wunreachable-code -Wempty-body -Wconditional-uninitialized -Winvalid-offsetof -Wnewline-eof)
-target_compile_options(fcd PRIVATE -fno-exceptions -fno-rtti -ffunction-sections -fdata-sections)
-
-# The Clang cmake config file is broken on binary distributions. We need a way
-# to tell if libclang was linked against the LLVM shared library.
-# execute_process(COMMAND ldd "${LLVM_LIBRARY_DIR}/libclang.so" COMMAND grep -q libLLVM RESULT_VARIABLE linked_to_libllvm)
-
-# if (${linked_to_libllvm} EQUAL 0)
-#     message(STATUS "Link to LLVM shared library.")
-#     # XXX: This shouldn't reference the specific LLVM version.
-#     set(llvm_libs -lLLVM-4.0)
-# else()
-#     message(STATUS "Link to LLVM static libraries.")
-#     llvm_map_components_to_libnames(llvm_libs analysis asmparser bitreader codegen core coverage instcombine instrumentation ipo irreader linker mc mcparser object option passes profiledata scalaropts support target transformutils vectorize)
-# endif()
-
-# Ubuntu does not package ClangConfig
-set(LLVM_LIBRARIES
-	LLVMCore LLVMSupport LLVMAnalysis LLVMipo LLVMIRReader
-	LLVMBitReader LLVMBitWriter LLVMTransformUtils LLVMScalarOpts
-
-	libclang clangIndex clangCodeGen clangFormat clangToolingCore
-	clangRewrite clangFrontend clangDriver clangParse clangSerialization
-	clangSema clangEdit clangAnalysis clangAST clangLex clangBasic
+    # tools/mcsema_lift/Lift.cpp
 )
 
-#target_compile_definitions(fcd PRIVATE _GLIBCXX_USE_CXX11_ABI=0)
-target_link_libraries(fcd PRIVATE ${LLVM_LIBRARIES})
-target_link_libraries(fcd PRIVATE dl -Wl,--gc-sections)
+# this is needed for the includes with absolutes paths to work correctly
+list(APPEND PROJECT_INCLUDEDIRECTORIES ${CMAKE_CURRENT_SOURCE_DIR})
 
-set_source_files_properties(${pythonbindingsfile} PROPERTIES COMPILE_FLAGS -w)
-target_link_libraries(fcd PRIVATE ${PYTHON_LIBRARIES} glog::glog gflags remill)
+target_link_libraries(${FCD} PRIVATE remill ${PROJECT_LIBRARIES})
+target_include_directories(${FCD} SYSTEM PUBLIC ${PROJECT_INCLUDEDIRECTORIES})
+target_compile_definitions(${FCD} PUBLIC ${PROJECT_DEFINITIONS})
+set_target_properties(${FCD} PROPERTIES COMPILE_FLAGS ${PROJECT_CXXFLAGS})

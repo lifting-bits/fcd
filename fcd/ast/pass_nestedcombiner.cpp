@@ -10,6 +10,8 @@
 #include "ast_passes.h"
 #include "visitor.h"
 
+#include <vector>
+
 using namespace llvm;
 using namespace std;
 
@@ -26,7 +28,7 @@ namespace
 		
 		bool visitNAryOperator(NAryOperatorExpression& nary)
 		{
-			return nary.getType() == NAryOperatorExpression::Assign || any_of(nary.operands(), [&](ExpressionUse& use)
+			return nary.getType() == NAryOperatorExpression::Assign || any_of(nary.operands().begin(), nary.operands().end(), [&](ExpressionUse& use)
 			{
 				return visit(*use.getUse());
 			});
@@ -107,7 +109,7 @@ namespace
 		StatementReference structurizeLoop(LoopStatement& loop)
 		{
 			StatementList& body = loop.getLoopBody();
-			SmallVector<pair<IfElseStatement*, LoopStatement::ConditionPosition>, 2> eligibleConditions;
+			std::vector<pair<IfElseStatement*, LoopStatement::ConditionPosition>> eligibleConditions;
 			
 			if (body.multiple())
 			{

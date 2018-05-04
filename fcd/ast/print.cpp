@@ -630,7 +630,7 @@ void StatementPrintVisitor::visitIfElse(const IfElseStatement& ifElse)
 	const Statement* nextStatement = &ifElse;
 	while (const auto nextIfElse = dyn_cast_or_null<IfElseStatement>(nextStatement))
 	{
-		auto scope = llvm::make_unique<PrintableScope>(currentScope.get());
+		auto scope = std::make_unique<PrintableScope>(currentScope.get());
 		
 		visit(*nextIfElse->getCondition());
 		fillUsers(scope.get());
@@ -647,7 +647,7 @@ void StatementPrintVisitor::visitIfElse(const IfElseStatement& ifElse)
 	
 	if (!nextStatementList->empty())
 	{
-		auto scope = llvm::make_unique<PrintableScope>(currentScope.get());
+		auto scope = std::make_unique<PrintableScope>(currentScope.get());
 		scope->prefix() = take(outSS);
 		
 		visit(move(scope), *nextStatementList);
@@ -658,7 +658,7 @@ void StatementPrintVisitor::visitLoop(const LoopStatement& loop)
 {
 	string prefix;
 	raw_string_ostream outSS(prefix);
-	auto scope = llvm::make_unique<PrintableScope>(currentScope.get());
+	auto scope = std::make_unique<PrintableScope>(currentScope.get());
 	
 	if (loop.getPosition() == LoopStatement::PreTested)
 	{

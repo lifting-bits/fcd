@@ -23,19 +23,15 @@
 #include <llvm/IR/Verifier.h>
 
 #include <llvm/Analysis/AliasAnalysis.h>
-#include <llvm/Analysis/BasicAliasAnalysis.h>
-#include <llvm/Analysis/ScopedNoAliasAA.h>
-#include <llvm/Analysis/TypeBasedAliasAnalysis.h>
-
-#include <llvm/Transforms/IPO.h>
-#include <llvm/Transforms/IPO/AlwaysInliner.h>
-#include <llvm/Transforms/Scalar.h>
-#include <llvm/Transforms/Scalar/GVN.h>
 
 #include <sstream>
 #include <string>
 
 #include "remill/BC/Util.h"
+
+#include "fcd/compat/IPO.h"
+#include "fcd/compat/Scalar.h"
+#include "fcd/compat/AnalysisPasses.h"
 
 #include "fcd/codegen/translation_context_remill.h"
 #include "fcd/pass_argrec_remill.h"

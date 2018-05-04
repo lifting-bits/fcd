@@ -22,6 +22,8 @@
 #include <llvm/Support/GenericDomTree.h>
 #include <llvm/Support/GenericDomTreeConstruction.h>
 
+#include "remill/BC/Version.h"
+
 #include <deque>
 #include <iterator>
 #include <unordered_map>
@@ -29,12 +31,13 @@
 class AstContext;
 class Expression;
 struct PreAstBasicBlock;
+class PreAstContext;
 
 struct PreAstBasicBlockEdge
 {
-	NOT_NULL(PreAstBasicBlock) from;
-	NOT_NULL(PreAstBasicBlock) to;
-	NOT_NULL(Expression) edgeCondition;
+	PreAstBasicBlock* from;
+	PreAstBasicBlock* to;
+	Expression* edgeCondition;
 	
 	PreAstBasicBlockEdge(PreAstBasicBlock& from, PreAstBasicBlock& to, Expression& edgeCondition)
 	: from(&from), to(&to), edgeCondition(&edgeCondition)
@@ -46,17 +49,21 @@ struct PreAstBasicBlockEdge
 
 struct PreAstBasicBlock
 {
-	llvm::SmallVector<NOT_NULL(PreAstBasicBlockEdge), 8> predecessors;
-	llvm::SmallVector<NOT_NULL(PreAstBasicBlockEdge), 2> successors;
+	std::vector<PreAstBasicBlockEdge*> predecessors;
+	std::vector<PreAstBasicBlockEdge*> successors;
 	
 	llvm::BasicBlock* block;
 	StatementReference blockStatement;
+	PreAstContext* parent;
 	
 	PreAstBasicBlock() = default;
 	PreAstBasicBlock(const PreAstBasicBlock&) = delete;
 	PreAstBasicBlock(PreAstBasicBlock&&);
 	
 	PreAstBasicBlock& operator=(PreAstBasicBlock&&);
+	
+	void setParent(PreAstContext *ctx) { parent = ctx; }
+	PreAstContext* getParent(){ return parent; }
 	
 	void swap(PreAstBasicBlock& block);
 	void printAsOperand(llvm::raw_ostream& os, bool printType);
@@ -70,7 +77,7 @@ class PreAstContext
 	std::unordered_map<llvm::BasicBlock*, PreAstBasicBlock*> blockMapping;
 	
 public:
-	typedef decltype(blockList)::iterator node_iterator;
+	typedef std::deque<PreAstBasicBlock>::iterator node_iterator;
 	
 	PreAstContext(AstContext& ctx);
 	
@@ -91,6 +98,7 @@ public:
 	PreAstBasicBlock& createBlock()
 	{
 		blockList.emplace_back();
+		blockList.back().setParent(this);
 		return blockList.back();
 	}
 	
@@ -114,115 +122,205 @@ public:
 		return blockList.size();
 	}
 	
+	#if LLVM_VERSION_NUMBER >= LLVM_VERSION(4, 0)
 	void view() const;
+	#endif
 };
 
 struct PreAstBasicBlockRegionTraits
 {
 	typedef PreAstContext FuncT;
 	typedef PreAstBasicBlock BlockT;
-	typedef llvm::DominatorTreeBase<PreAstBasicBlock> DomTreeT;
 	typedef llvm::DomTreeNodeBase<PreAstBasicBlock> DomTreeNodeT;
 	typedef llvm::ForwardDominanceFrontierBase<PreAstBasicBlock> DomFrontierT;
+
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(5, 0)
+	typedef llvm::DominatorTreeBase<PreAstBasicBlock, false> DomTreeT;
+	typedef llvm::DominatorTreeBase<PreAstBasicBlock, true> PostDomTreeT;
+#else
+	typedef llvm::DominatorTreeBase<PreAstBasicBlock> DomTreeT;
 	typedef llvm::DominatorTreeBase<PreAstBasicBlock> PostDomTreeT;
+#endif
 };
 
-template<typename Iterator, typename Transformer>
-struct PreAstBasicBlockIterator : public std::iterator<std::input_iterator_tag, NOT_NULL(PreAstBasicBlock)>
+class PABBSuccIter : public std::iterator<std::input_iterator_tag, PreAstBasicBlock*>
 {
-	typename std::remove_reference<Iterator>::type base;
-	Transformer transformer;
+	private:
+		std::vector<PreAstBasicBlockEdge*>::iterator base;
+	public:
+		PABBSuccIter(std::vector<PreAstBasicBlockEdge*>::iterator iter)
+		: base(iter) {}
 	
-	PreAstBasicBlockIterator(Iterator base, Transformer&& transformer)
-	: base(base), transformer(transformer)
-	{
-	}
+		auto &operator*() const
+		{
+			return (*base)->to;
+		}
+		
+		auto &operator++()
+		{
+			++base;
+			return *this;
+		}
+		
+		auto operator++(int)
+		{
+			auto copy = *this;
+			++*this;
+			return copy;
+		}
+
+		auto &operator--()
+		{
+			--base;
+			return *this;
+		}
+
+		difference_type operator-(const PABBSuccIter& that) const
+		{
+			return base - that.base;
+		}
 	
-	NOT_NULL(PreAstBasicBlock) operator*() const
-	{
-		return transformer(*base);
-	}
+		bool operator==(const PABBSuccIter& that) const
+		{
+			return base == that.base;
+		}
 	
-	PreAstBasicBlockIterator& operator++()
-	{
-		++base;
-		return *this;
-	}
-	
-	PreAstBasicBlockIterator operator++(int)
-	{
-		auto copy = *this;
-		++*this;
-		return copy;
-	}
-	
-	difference_type operator-(const PreAstBasicBlockIterator& that) const
-	{
-		return base - that.base;
-	}
-	
-	bool operator==(const PreAstBasicBlockIterator& that) const
-	{
-		return base == that.base;
-	}
-	
-	bool operator!=(const PreAstBasicBlockIterator& that) const
-	{
-		return !(base == that.base);
-	}
+		bool operator!=(const PABBSuccIter& that) const
+		{
+			return !(base == that.base);
+		}
 };
 
-namespace
+class PABBPredIter : public std::iterator<std::input_iterator_tag, PreAstBasicBlock*>
 {
-	template<typename Iterator, typename Action>
-	auto makePreAstBlockIterator(Iterator&& iter, Action&& action)
-	{
-		return PreAstBasicBlockIterator<Iterator, Action>(std::forward<Iterator>(iter), std::forward<Action>(action));
-	}
-
-	auto makeSuccessorIterator(decltype(PreAstBasicBlock().successors)::iterator iter)
-	{
-		return makePreAstBlockIterator(iter, [](PreAstBasicBlockEdge* edge) { return edge->to; });
-	}
-
-	auto makePredecessorIterator(decltype(PreAstBasicBlock().predecessors)::iterator iter)
-	{
-		return makePreAstBlockIterator(iter, [](PreAstBasicBlockEdge* edge) { return edge->from; });
-	}
+	private:
+		std::vector<PreAstBasicBlockEdge*>::iterator base;
+	public:
+		PABBPredIter(std::vector<PreAstBasicBlockEdge*>::iterator iter)
+		: base(iter) {}
 	
-	auto makeNodeListIterator(decltype(std::declval<PreAstContext>().begin()) iter)
-	{
-		return makePreAstBlockIterator(iter, [](PreAstBasicBlock& block) { return &block; });
-	}
-}
+		auto &operator*() const
+		{
+			return (*base)->from;
+		}
+		
+		auto &operator++()
+		{
+			++base;
+			return *this;
+		}
+		
+		auto operator++(int)
+		{
+			auto copy = *this;
+			++*this;
+			return copy;
+		}
+
+		auto &operator--()
+		{
+			--base;
+			return *this;
+		}
+
+		difference_type operator-(const PABBPredIter& that) const
+		{
+			return base - that.base;
+		}
+	
+		bool operator==(const PABBPredIter& that) const
+		{
+			return base == that.base;
+		}
+	
+		bool operator!=(const PABBPredIter& that) const
+		{
+			return !(base == that.base);
+		}
+};
+
+class PABBNodesIter : public std::iterator<std::input_iterator_tag, PreAstBasicBlock*>
+{
+	private:
+		std::deque<PreAstBasicBlock>::iterator base;
+	public:
+		PABBNodesIter(std::deque<PreAstBasicBlock>::iterator iter)
+		: base(iter) {}
+	
+		auto operator*() const
+		{
+			return &*base;
+		}
+		
+		auto &operator++()
+		{
+			++base;
+			return *this;
+		}
+		
+		auto operator++(int)
+		{
+			auto copy = *this;
+			++*this;
+			return copy;
+		}
+
+		auto &operator--()
+		{
+			--base;
+			return *this;
+		}
+
+		difference_type operator-(const PABBNodesIter& that) const
+		{
+			return base - that.base;
+		}
+	
+		bool operator==(const PABBNodesIter& that) const
+		{
+			return base == that.base;
+		}
+	
+		bool operator!=(const PABBNodesIter& that) const
+		{
+			return !(base == that.base);
+		}
+
+		operator PreAstBasicBlock*()
+		{
+			return operator*();
+		}
+};
 
 template<>
 struct llvm::GraphTraits<PreAstBasicBlock*>
 {
+	typedef PreAstBasicBlock NodeType;
 	typedef PreAstBasicBlock* NodeRef;
-	typedef decltype(makeSuccessorIterator(std::declval<decltype(PreAstBasicBlock().successors)::iterator>())) ChildIteratorType;
+	typedef PABBSuccIter ChildIteratorType;
 	
 	static NodeRef getEntryNode(PreAstBasicBlock* block)
 	{
 		return block;
 	}
 	
-	static ChildIteratorType child_begin(NodeRef node)
+	static ChildIteratorType child_begin(NodeType *node)
 	{
-		return makeSuccessorIterator(node->successors.begin());
+		return ChildIteratorType(node->successors.begin());
 	}
 	
-	static ChildIteratorType child_end(NodeRef node)
+	static ChildIteratorType child_end(NodeType *node)
 	{
-		return makeSuccessorIterator(node->successors.end());
+		return ChildIteratorType(node->successors.end());
 	}
 };
 
 template<>
 struct llvm::GraphTraits<llvm::Inverse<PreAstBasicBlock*>>
 {
+	typedef PreAstBasicBlock NodeType;
 	typedef PreAstBasicBlock* NodeRef;
-	typedef decltype(makePredecessorIterator(std::declval<decltype(PreAstBasicBlock().successors)::iterator>())) ChildIteratorType;
+	typedef PABBPredIter ChildIteratorType;
 	
 	static NodeRef getEntryNode(PreAstBasicBlock* block)
 	{
@@ -231,27 +329,39 @@ struct llvm::GraphTraits<llvm::Inverse<PreAstBasicBlock*>>
 	
 	static ChildIteratorType child_begin(NodeRef node)
 	{
-		return makePredecessorIterator(node->predecessors.begin());
+		return ChildIteratorType(node->predecessors.begin());
 	}
 	
 	static ChildIteratorType child_end(NodeRef node)
 	{
-		return makePredecessorIterator(node->predecessors.end());
+		return ChildIteratorType(node->predecessors.end());
 	}
 };
 
 struct PreAstContextGraphTraits
 {
-	typedef decltype(makeNodeListIterator(std::declval<PreAstContext>().begin())) nodes_iterator;
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(4, 0) || LLVM_VERSION_NUMBER <= LLVM_VERSION(3, 7)
+	typedef PABBNodesIter nodes_iterator;
+#else
+	typedef std::deque<PreAstBasicBlock>::iterator nodes_iterator;
+#endif
 	
 	static nodes_iterator nodes_begin(PreAstContext* f)
 	{
-		return makeNodeListIterator(f->begin());
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(4, 0) || LLVM_VERSION_NUMBER <= LLVM_VERSION(3, 7)
+		return PABBNodesIter(f->begin());
+#else
+		return f->begin();
+#endif
 	}
 	
 	static nodes_iterator nodes_end(PreAstContext* f)
 	{
-		return makeNodeListIterator(f->end());
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(4, 0) || LLVM_VERSION_NUMBER <= LLVM_VERSION(3, 7)
+		return PABBNodesIter(f->end());
+#else
+		return f->end();
+#endif
 	}
 	
 	static size_t size(PreAstContext* f)
@@ -281,6 +391,8 @@ struct llvm::GraphTraits<llvm::Inverse<PreAstContext*>>
 	using PreAstContextGraphTraits::getEntryNode;
 };
 
+#if LLVM_VERSION_NUMBER > LLVM_VERSION(3, 7)
+
 template<>
 struct llvm::GraphTraits<PreAstBasicBlockRegionTraits::DomTreeNodeT*>
 : public llvm::DomTreeGraphTraitsBase<PreAstBasicBlockRegionTraits::DomTreeNodeT, PreAstBasicBlockRegionTraits::DomTreeNodeT::iterator>
@@ -292,5 +404,7 @@ struct llvm::GraphTraits<const PreAstBasicBlockRegionTraits::DomTreeNodeT*>
 : public llvm::DomTreeGraphTraitsBase<const PreAstBasicBlockRegionTraits::DomTreeNodeT, PreAstBasicBlockRegionTraits::DomTreeNodeT::const_iterator>
 {
 };
+
+#endif
 
 #endif /* pre_ast_cfg_hpp */

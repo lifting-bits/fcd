@@ -10,11 +10,7 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
-#include <llvm/Analysis/AliasAnalysis.h>
-#include <llvm/Analysis/BasicAliasAnalysis.h>
-#include <llvm/Analysis/Passes.h>
-#include <llvm/Analysis/ScopedNoAliasAA.h>
-#include <llvm/Analysis/TypeBasedAliasAnalysis.h>
+#include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/IR/Verifier.h>
 #include <llvm/IRReader/IRReader.h>
@@ -23,9 +19,6 @@
 #include <llvm/Support/PrettyStackTrace.h>
 #include <llvm/Support/Signals.h>
 #include <llvm/Support/SourceMgr.h>
-#include <llvm/Transforms/IPO.h>
-#include <llvm/Transforms/Scalar.h>
-#include <llvm/Transforms/Scalar/GVN.h>
 
 #include <list>
 #include <memory>
@@ -33,8 +26,14 @@
 #include <string>
 #include <vector>
 
+#include "remill/BC/Util.h"
+
 #include "fcd/ast/ast_passes.h"
 #include "fcd/codegen/translation_context_remill.h"
+#include "fcd/compat/AliasAnalysis.h"
+#include "fcd/compat/AnalysisPasses.h"
+#include "fcd/compat/IPO.h"
+#include "fcd/compat/Scalar.h"
 #include "fcd/header_decls.h"
 #include "fcd/metadata.h"
 #include "fcd/passes.h"
@@ -348,7 +347,12 @@ int main(int argc, char** argv) {
   std::stringstream ss("");
 
   llvm::EnablePrettyStackTrace();
+
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 7)
   llvm::sys::PrintStackTraceOnErrorSignal(argv[0]);
+#else
+  llvm::sys::PrintStackTraceOnErrorSignal();
+#endif
 
   google::InitGoogleLogging(argv[0]);
   google::SetUsageMessage(ss.str());
@@ -391,14 +395,10 @@ int main(int argc, char** argv) {
 
   // step 1: create annotated module from executable (or load it from .ll)
   if (FLAGS_module_in) {
-    llvm::PrettyStackTraceFormat parsingIR("Parsing IR from \"%s\"",
-                                           inputFile.c_str());
-    llvm::SMDiagnostic errs;
-    module = llvm::parseIRFile(inputFile, errs, llvm);
-    CHECK(module) << "Failed to parse input file: " << errs.getMessage().str();
+    LOG(INFO) << "Parsing IR from " << inputFile;
+    module.reset(remill::LoadModuleFromFile(&llvm, inputFile, false));
   } else {
-    llvm::PrettyStackTraceFormat parsingIR("Parsing executable \"%s\"",
-                                           inputFile.c_str());
+    LOG(INFO) << "Parsing executable " << inputFile;
 
     auto buffer = llvm::MemoryBuffer::getFile(inputFile, -1, false);
     CHECK(buffer) << "Failed to open input file: " << errorOf(buffer);

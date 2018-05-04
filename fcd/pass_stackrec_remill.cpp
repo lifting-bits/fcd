@@ -196,9 +196,11 @@ static std::vector<llvm::AllocaInst *> FindStackParams(
     std::unordered_map<llvm::AllocaInst *, int64_t> &vars) {
   auto func = call->getCalledFunction();
 
+  auto call_iter =
+      llvm::BasicBlock::reverse_iterator(llvm::BasicBlock::iterator(call));
+
   auto call_range =
-      llvm::make_range(std::next(llvm::BasicBlock::reverse_iterator(call)),
-                       call->getParent()->rend());
+      llvm::make_range(std::next(call_iter), call->getParent()->rend());
 
   std::map<int64_t, llvm::AllocaInst *> func_vars;
 
@@ -323,7 +325,7 @@ bool RemillStackRecovery::runOnModule(llvm::Module &module) {
 
   for (auto &func : module) {
     auto sp = GetStackPointerArg(&func);
-    if (sp != nullptr && !sp->user_empty() && !func.empty()) {
+    if (sp != nullptr && sp->hasNUsesOrMore(1) && !func.empty()) {
       // Find stack objects (stack variables and function parameters
       // passed via stack) by analyzing accesses to memory addresses
       // derived from the stack pointer. Addresses, pointer operands
@@ -364,7 +366,7 @@ bool RemillStackRecovery::runOnModule(llvm::Module &module) {
     // function parameters passed via stack.
     std::map<int64_t, llvm::AllocaInst *> stack_params;
     for (auto var : vars) {
-      if (var.first->getFunction() == func && var.second > 0) {
+      if (var.first->getParent()->getParent() == func && var.second > 0) {
         stack_params[var.second] = var.first;
       }
     }

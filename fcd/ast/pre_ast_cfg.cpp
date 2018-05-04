@@ -58,6 +58,7 @@ PreAstBasicBlock::PreAstBasicBlock(PreAstBasicBlock&& that)
 
 PreAstBasicBlock& PreAstBasicBlock::operator=(PreAstBasicBlock&& that)
 {
+	::swap(parent, that.parent);
 	::swap(block, that.block);
 	::swap(blockStatement, that.blockStatement);
 	::swap(predecessors, that.predecessors);
@@ -102,7 +103,7 @@ void PreAstContext::generateBlocks(Function& fn)
 		blockMapping.insert({&bbRef, &preAstBB});
 		
 		// Create empty block statement with just Φ nodes at first.
-		for (BasicBlock* succ : successors(&bbRef))
+		for (BasicBlock* succ : llvm::make_range(succ_begin(&bbRef), succ_end(&bbRef)))
 		{
 			for (auto phiIter = succ->begin(); auto phi = dyn_cast<PHINode>(phiIter); ++phiIter)
 			{
@@ -125,7 +126,7 @@ void PreAstContext::generateBlocks(Function& fn)
 			}
 		}
 		
-		for (BasicBlock* pred : predecessors(&bbRef))
+		for (BasicBlock* pred : llvm::make_range(pred_begin(&bbRef), pred_end(&bbRef)))
 		{
 			// Compute edge condition and create edge
 			Expression* edgeCondition;
@@ -225,7 +226,9 @@ PreAstBasicBlock& PreAstContext::createRedirectorBlock(ArrayRef<PreAstBasicBlock
 	return newBlock;
 }
 
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(4, 0)
 void PreAstContext::view() const
 {
 	ViewGraph(const_cast<PreAstContext*>(this), "Pre-AST Basic Block Graph");
 }
+#endif

@@ -11,6 +11,7 @@
 #include "metadata.h"
 #include "passes.h"
 
+#include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/PatternMatch.h>
 
 #include <deque>
@@ -753,7 +754,7 @@ namespace
 			
 			ConstantInt* zero = ConstantInt::get(Type::getInt64Ty(ctx), 0);
 			Value* result = basePointer;
-			SmallVector<Value*, 4> gepIndices;
+			std::vector<Value*> gepIndices;
 			
 			auto vectorOfLinks = linkMapIter->second->toVector();
 			// If we're seeking a void element, we need to adjust the GEP to get the element after it. This is already
@@ -805,6 +806,7 @@ namespace
 				}
 			}
 			
+			IRBuilder<> ir(insertionPoint);
 			for (GepLink& link : vectorOfLinks)
 			{
 				gepIndices.push_back(link.getIndex());
@@ -812,7 +814,8 @@ namespace
 				Type* actual = GetElementPtrInst::getIndexedType(result->getType(), gepIndices);
 				if (expected != actual && !expected->isVoidTy())
 				{
-					result = GetElementPtrInst::Create(nullptr, result, gepIndices, "", insertionPoint);
+					result = ir.CreateGEP(result, gepIndices);
+					// result = GetElementPtrInst::Create(nullptr, result, gepIndices, "", insertionPoint);
 					result = CastInst::Create(CastInst::BitCast, result, expected->getPointerTo(), "", insertionPoint);
 					gepIndices = { zero };
 				}
@@ -820,7 +823,8 @@ namespace
 			
 			if (gepIndices.size() > 1)
 			{
-				result = GetElementPtrInst::Create(nullptr, result, gepIndices, "", insertionPoint);
+				result = ir.CreateGEP(result, gepIndices);
+				// result = GetElementPtrInst::Create(nullptr, result, gepIndices, "", insertionPoint);
 			}
 			
 			return result;
@@ -836,11 +840,6 @@ namespace
 		
 		IdentifyLocals() : ModulePass(ID)
 		{
-		}
-		
-		virtual StringRef getPassName() const override
-		{
-			return "Identify locals";
 		}
 		
 		Argument* getStackPointer(Function& fn)
@@ -963,7 +962,6 @@ namespace
 		
 		virtual bool doInitialization(Module& m) override
 		{
-			dl = &m.getDataLayout();
 			return ModulePass::doInitialization(m);
 		}
 		
@@ -1009,7 +1007,7 @@ namespace
 					// create new function, copy attributes and metadata
 					Function* newFunc = Function::Create(newFnType, fn.getLinkage());
 					newFunc->copyAttributesFrom(&fn);
-					fn.getParent()->getFunctionList().insert(fn.getIterator(), newFunc);
+					fn.getParent()->getFunctionList().insert(Module::iterator(&fn), newFunc);
 					newFunc->takeName(&fn);
 					md::copy(fn, *newFunc);
 					md::removeStackPointerArgument(*newFunc);
@@ -1031,14 +1029,14 @@ namespace
 						newArgs.push_back(&arg);
 					}
 					
-					for (size_t i = 0; i < newArgs.size(); ++i)
+					for (unsigned i = 0; i < newArgs.size(); ++i)
 					{
 						oldArgs[i]->replaceAllUsesWith(newArgs[i]);
 						newArgs[i]->takeName(oldArgs[i]);
 					}
 					
 					// update call sites
-					while (!fn.user_empty())
+					while (fn.hasNUsesOrMore(1))
 					{
 						auto user = *fn.user_begin();
 						if (auto call = dyn_cast<CallInst>(user))
@@ -1078,7 +1076,8 @@ namespace
 			{
 				auto allocaInsert = &*fn.getEntryBlock().getFirstInsertionPt();
 				Type* naiveType = llvmFrame->getNaiveType(*root);
-				AllocaInst* stackFrame = new AllocaInst(naiveType, "stackframe", allocaInsert);
+				IRBuilder<> ir(allocaInsert);
+				AllocaInst* stackFrame = ir.CreateAlloca(naiveType, nullptr, "stackframe");
 				md::setStackFrame(*stackFrame);
 				for (auto object : llvmFrame->getAllObjects())
 				{

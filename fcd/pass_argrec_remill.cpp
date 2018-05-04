@@ -29,13 +29,14 @@
 #include "remill/BC/ABI.h"
 #include "remill/BC/Util.h"
 
+#include "fcd/compat/Attributes.h"
 #include "fcd/pass_argrec_remill.h"
 
 namespace fcd {
 
 namespace {
 
-static const char *sPrefix;
+static std::string sPrefix;
 static const remill::Arch *sArch;
 
 static std::unordered_set<const char *> RegisterAliasSet(const char *reg) {
@@ -85,7 +86,7 @@ static std::unordered_set<const char *> RegisterAliasSet(const char *reg) {
                                              {"WZR", "ZR", nullptr},
                                              {"WSP", "SP", nullptr},
                                              {nullptr}};
-  
+
   auto GetAlias = [&](unsigned i, unsigned j) {
     return sArch->IsAMD64() ? AMD64Aliases[i][j] : AArch64Aliases[i][j];
   };
@@ -228,7 +229,9 @@ static void LoadReturnRegToRetInsts(llvm::Function *func,
 
 static std::string TrimPrefix(std::string str) {
   auto ref = llvm::StringRef(str);
-  ref.consume_front(sPrefix);
+  if (ref.startswith(sPrefix)) {
+    ref = ref.drop_front(sPrefix.size());
+  }
   return ref.str();
 }
 
@@ -236,7 +239,7 @@ static void UpdateCalls(llvm::Function *old_func, llvm::Function *new_func,
                         CallingConvention &cc) {
   llvm::IRBuilder<> ir(new_func->getContext());
   for (auto old_call : remill::CallersOf(old_func)) {
-    auto caller = old_call->getFunction();
+    auto caller = old_call->getParent()->getParent();
     if (caller->getName().startswith(sPrefix)) {
       ir.SetInsertPoint(old_call);
       std::vector<llvm::Value *> params;
@@ -267,7 +270,7 @@ static llvm::Function *DeclareParametrizedFunc(llvm::Function *func,
   // Get parameter regs from the callconv. Also add the stack pointer reg,
   // since it's used to access parameters passed by stack. Also add aliases.
   auto cc_regs = cc.ParamRegs();
-  auto ilist = llvm::instructions(func);
+  auto ilist = llvm::make_range(llvm::inst_begin(func), llvm::inst_end(func));
   cc_regs.insert(cc_regs.begin(), cc.StackPointerVarName());
   for (auto reg : cc_regs) {
     auto user = FirstUserOfReg(func, reg, ilist);
@@ -380,17 +383,17 @@ bool RemillArgumentRecovery::runOnModule(llvm::Module &module) {
       // and return registers. Then declare a new function
       // with the recovered argument and return types.
       auto cc_func = DeclareParametrizedFunc(&func, cc);
-      
+
       // Converts remill's `State`, `pc` and `Memory` args
       // to local variables so that they make room for
       // recovered register arguments.
       ConvertRemillArgsToLocals(&func);
-      
+
       // Clone the old function to the newly created one
       remill::ValueMap val_map;
       remill::CloneFunctionInto(&func, cc_func, val_map);
 
-      // Create local variables for every argument in 
+      // Create local variables for every argument in
       // `cc_func` and store parameter values to them.
       StoreRegArgsToLocals(cc_func);
 
@@ -415,7 +418,7 @@ bool RemillArgumentRecovery::runOnModule(llvm::Module &module) {
       auto arg_name = TrimPrefix(arg.getName());
       auto var = remill::FindVarInFunction(func, arg_name);
       arg.takeName(var);
-      arg.removeAttr(llvm::Attribute::Dereferenceable);
+      removeAttr(arg, llvm::Attribute::Dereferenceable);
     }
     func->takeName(old_func);
     old_func->replaceAllUsesWith(llvm::UndefValue::get(old_func->getType()));

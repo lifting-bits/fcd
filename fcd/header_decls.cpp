@@ -7,6 +7,9 @@
 // license. See LICENSE.md for details.
 //
 
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
 #include "header_decls.h"
 
 #include "CodeGenTypes.h"
@@ -20,13 +23,21 @@
 #include <clang/Frontend/CompilerInstance.h>
 #include <clang/Frontend/TextDiagnosticPrinter.h>
 #include <clang/Lex/PreprocessorOptions.h>
-#include <clang/Index/CodegenNameGenerator.h>
-#include <llvm/IR/CallingConv.h>
+
 #include <llvm/IR/Function.h>
 #include <llvm/Support/Path.h>
 #include <llvm/Support/PrettyStackTrace.h>
 
 #include <dlfcn.h>
+
+#include "remill/BC/Version.h"
+
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 9)
+#include <clang/Index/CodegenNameGenerator.h>
+#endif
+
+#include "fcd/compat/Attributes.h"
+#include "fcd/compat/CallingConvention.h"
 
 using namespace clang;
 using namespace llvm;
@@ -46,16 +57,24 @@ namespace
 		CC_LOOKUP(CC_X86StdCall, X86_StdCall),
 		CC_LOOKUP(CC_X86FastCall, X86_FastCall),
 		CC_LOOKUP(CC_X86ThisCall, X86_ThisCall),
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 6)
 		CC_LOOKUP(CC_X86VectorCall, X86_VectorCall),
-		CC_LOOKUP(CC_X86_64Win64, X86_64_Win64),
+#endif
+		CC_LOOKUP(CC_Win64, Win64),
 		CC_LOOKUP(CC_X86_64SysV, X86_64_SysV),
 		CC_LOOKUP(CC_AAPCS, ARM_AAPCS),
 		CC_LOOKUP(CC_AAPCS_VFP, ARM_AAPCS_VFP),
 		CC_LOOKUP(CC_IntelOclBicc, Intel_OCL_BI),
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 7)
 		CC_LOOKUP(CC_SpirFunction, SPIR_FUNC),
+#endif
+
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 9)
 		CC_LOOKUP(CC_Swift, Swift),
 		CC_LOOKUP(CC_PreserveMost, PreserveMost),
 		CC_LOOKUP(CC_PreserveAll, PreserveAll),
+#endif
+
 	};
 #undef CC_LOOKUP
 	
@@ -93,7 +112,8 @@ namespace
 		}
 		return info.dli_fname;
 	}
-	
+
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 9)
 	class FunctionDeclarationFinder : public RecursiveASTVisitor<FunctionDeclarationFinder>
 	{
 		index::CodegenNameGenerator& mangler;
@@ -153,7 +173,9 @@ namespace
 			return true;
 		}
 	};
+#endif // LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 9)
 }
+
 
 HeaderDeclarations::HeaderDeclarations(llvm::Module& module, unique_ptr<ASTUnit> tu, vector<string> includedFiles)
 : module(module), tu(move(tu)), includedFiles(move(includedFiles))
@@ -162,6 +184,10 @@ HeaderDeclarations::HeaderDeclarations(llvm::Module& module, unique_ptr<ASTUnit>
 
 unique_ptr<HeaderDeclarations> HeaderDeclarations::create(llvm::Module& module, const vector<string>& searchPath, vector<string> headers, const vector<string>& frameworks, raw_ostream& errors)
 {
+#if LLVM_VERSION_NUMBER < LLVM_VERSION(3, 9)
+	LOG(ERROR) << "Header declaration parsing is only available for LLVM 3.9 and higher";
+	return unique_ptr<HeaderDeclarations>(new HeaderDeclarations(module, nullptr, move(headers)));
+#else
 	if (headers.size() == 0)
 	{
 		// No headers? No problem.
@@ -212,7 +238,7 @@ unique_ptr<HeaderDeclarations> HeaderDeclarations::create(llvm::Module& module, 
 			}
 			
 			auto frameworkArgsArrayRef = makeArrayRef(&*cInvocationArgs.begin(), &*cInvocationArgs.end());
-			clang = createInvocationFromCommandLine(frameworkArgsArrayRef, diags);
+			clang = make_shared<CompilerInvocation>(*createInvocationFromCommandLine(frameworkArgsArrayRef, diags));
 		}
 		
 		if (clang)
@@ -244,7 +270,12 @@ unique_ptr<HeaderDeclarations> HeaderDeclarations::create(llvm::Module& module, 
 			preprocessorOpts.addRemappedFile("<fcd>", includeBuffer.release());
 			
 			auto pch = std::make_shared<PCHContainerOperations>();
+
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(4, 0)
 			auto tu = ASTUnit::LoadFromCompilerInvocation(clang, pch, diags, new FileManager(FileSystemOptions()), true);
+#else
+			auto tu = ASTUnit::LoadFromCompilerInvocation(clang.get(), pch, diags, new FileManager(FileSystemOptions()), true);			
+#endif // LLVM_VERSION_NUMBER >= LLVM_VERSION(4, 0)
 			if (diagPrinter->getNumErrors() == 0)
 			{
 				if (tu)
@@ -283,6 +314,7 @@ unique_ptr<HeaderDeclarations> HeaderDeclarations::create(llvm::Module& module, 
 		errors << "Couldn't create memory buffer from list of includes!\n";
 	}
 	return nullptr;
+#endif // LLVM_VERSION_NUMBER < LLVM_VERSION(3, 9)
 }
 
 Function* HeaderDeclarations::prototypeForDeclaration(FunctionDecl& decl)
@@ -308,19 +340,22 @@ Function* HeaderDeclarations::prototypeForDeclaration(FunctionDecl& decl)
 		attributeBuilder.addAttribute(Attribute::ReadOnly);
 		attributeBuilder.addAttribute(Attribute::NoUnwind);
 	}
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 8)
 	if (decl.hasAttr<NoAliasAttr>())
 	{
 		attributeBuilder.addAttribute(Attribute::ArgMemOnly);
 		attributeBuilder.addAttribute(Attribute::NoUnwind);
 	}
+#endif
 	
 	Function* fn = Function::Create(functionType, GlobalValue::ExternalLinkage);
-	fn->addAttributes(AttributeSet::FunctionIndex, AttributeSet::get(module.getContext(), AttributeSet::FunctionIndex, attributeBuilder));
+	fn->addAttributes(AttributeLoc::FunctionIndex, createAttrSet(module.getContext(), AttributeLoc::FunctionIndex, attributeBuilder));
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 7)
 	if (decl.hasAttr<RestrictAttr>())
 	{
-		fn->addAttribute(AttributeSet::ReturnIndex, Attribute::NoAlias);
+		fn->addAttribute(AttributeLoc::ReturnIndex, Attribute::NoAlias);
 	}
-	
+#endif
 	// If we know the calling convention, apply it here
 	auto prototype = decl.getType()->getCanonicalTypeUnqualified().getAs<FunctionProtoType>();
 	auto callingConvention = lookupCallingConvention(prototype->getExtInfo().getCC());

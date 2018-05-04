@@ -9,6 +9,8 @@
 
 #include "metadata.h"
 
+#include "remill/BC/Version.h"
+
 using namespace llvm;
 using namespace std;
 
@@ -19,8 +21,12 @@ namespace
 	{
 		auto& ctx = value.getContext();
 		Type* i1 = Type::getInt1Ty(ctx);
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 6)
 		MDNode* zeroNode = MDNode::get(ctx, ConstantAsMetadata::get(ConstantInt::get(i1, 1)));
+#endif
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 7)
 		value.setMetadata(flag, zeroNode);
+#endif
 	}
 	
 	bool getMdNameForType(const StructType& type, string& output)
@@ -59,6 +65,7 @@ vector<string> md::getIncludedFiles(Module& module)
 	vector<string> result;
 	if (MDNode* node = dyn_cast_or_null<MDNode>(module.getModuleFlag("fcd.includes")))
 	{
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 6)
 		for (Metadata* op : node->operands())
 		{
 			if (auto file = dyn_cast<MDString>(op))
@@ -66,12 +73,14 @@ vector<string> md::getIncludedFiles(Module& module)
 				result.push_back(file->getString());
 			}
 		}
+#endif
 	}
 	return result;
 }
 
 ConstantInt* md::getStackPointerArgument(const Function &fn)
 {
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 7)
 	if (auto node = fn.getMetadata("fcd.stackptr"))
 	{
 		if (auto constant = dyn_cast<ConstantAsMetadata>(node->getOperand(0)))
@@ -79,11 +88,13 @@ ConstantInt* md::getStackPointerArgument(const Function &fn)
 			return dyn_cast<ConstantInt>(constant->getValue());
 		}
 	}
+#endif	
 	return nullptr;
 }
 
 ConstantInt* md::getVirtualAddress(const Function& fn)
 {
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 7)
 	if (auto node = fn.getMetadata("fcd.vaddr"))
 	{
 		if (auto constantMD = dyn_cast<ConstantAsMetadata>(node->getOperand(0)))
@@ -94,11 +105,13 @@ ConstantInt* md::getVirtualAddress(const Function& fn)
 			}
 		}
 	}
+#endif
 	return nullptr;
 }
 
 unsigned md::getFunctionVersion(const Function& fn)
 {
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 7)
 	if (auto node = fn.getMetadata("fcd.funver"))
 	{
 		if (auto constantMD = dyn_cast<ConstantAsMetadata>(node->getOperand(0)))
@@ -109,11 +122,13 @@ unsigned md::getFunctionVersion(const Function& fn)
 			}
 		}
 	}
+#endif
 	return 0;
 }
 
 Function* md::getFinalPrototype(const Function& fn)
 {
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 7)
 	if (auto node = fn.getMetadata("fcd.prototype"))
 	{
 		if (auto valueAsMd = dyn_cast<ValueAsMetadata>(node->getOperand(0)))
@@ -121,17 +136,26 @@ Function* md::getFinalPrototype(const Function& fn)
 			return cast<Function>(valueAsMd->getValue());
 		}
 	}
+#endif
 	return nullptr;
 }
 
 bool md::isStub(const Function &fn)
 {
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 7)
 	return fn.getMetadata("fcd.stub") != nullptr;
+#else
+	return false;
+#endif
 }
 
 bool md::areArgumentsRecoverable(const Function &fn)
 {
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 7)
 	return fn.getMetadata("fcd.recoverable") != nullptr;
+#else
+	return false;
+#endif
 }
 
 bool md::isPrototype(const Function &fn)
@@ -163,11 +187,16 @@ bool md::isStackFrame(const AllocaInst &alloca)
 
 bool md::isProgramMemory(const Instruction &value)
 {
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 7)
 	return value.getMetadata("fcd.prgmem") != nullptr;
+#else
+	return false;
+#endif
 }
 
 MDString* md::getAssemblyString(const Function& fn)
 {
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 7)
 	if (auto node = fn.getMetadata("fcd.asm"))
 	{
 		if (auto nameNode = dyn_cast<MDString>(node->getOperand(0)))
@@ -175,18 +204,21 @@ MDString* md::getAssemblyString(const Function& fn)
 			return nameNode;
 		}
 	}
+#endif
 	return nullptr;
 }
 
 void md::addIncludedFiles(Module& module, const vector<string>& includedFiles)
 {
 	LLVMContext& ctx = module.getContext();
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 6)
 	SmallVector<Metadata*, 20> mdIncludes;
 	for (const auto& file : includedFiles)
 	{
 		mdIncludes.push_back(MDString::get(ctx, file));
 	}
 	module.addModuleFlag(Module::AppendUnique, "fcd.includes", MDNode::get(ctx, mdIncludes));
+#endif
 }
 
 void md::setVirtualAddress(Function& fn, uint64_t virtualAddress)
@@ -194,8 +226,12 @@ void md::setVirtualAddress(Function& fn, uint64_t virtualAddress)
 	ensureFunctionBody(fn);
 	auto& ctx = fn.getContext();
 	ConstantInt* cvaddr = ConstantInt::get(Type::getInt64Ty(ctx), virtualAddress);
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 6)
 	MDNode* vaddrNode = MDNode::get(ctx, ConstantAsMetadata::get(cvaddr));
+#endif
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 7)
 	fn.setMetadata("fcd.vaddr", vaddrNode);
+#endif
 }
 
 void md::incrementFunctionVersion(llvm::Function &fn)
@@ -203,15 +239,21 @@ void md::incrementFunctionVersion(llvm::Function &fn)
 	unsigned newVersion = getFunctionVersion(fn) + 1;
 	auto& ctx = fn.getContext();
 	ConstantInt* cNewVersion = ConstantInt::get(Type::getInt32Ty(ctx), newVersion);
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 6)
 	MDNode* versionNode = MDNode::get(ctx, ConstantAsMetadata::get(cNewVersion));
+#endif
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 7)
 	fn.setMetadata("fcd.funver", versionNode);
+#endif
 }
 
 void md::setFinalPrototype(Function& stub, Function& target)
 {
 	ensureFunctionBody(stub);
 	ensureFunctionBody(target);
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 7)
 	stub.setMetadata("fcd.prototype", MDNode::get(stub.getContext(), ValueAsMetadata::get(&target)));
+#endif
 }
 
 void md::setIsStub(Function &fn, bool stub)
@@ -221,10 +263,12 @@ void md::setIsStub(Function &fn, bool stub)
 	{
 		setFlag(fn, "fcd.stub");
 	}
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 7)
 	else
 	{
 		fn.setMetadata("fcd.stub", nullptr);
 	}
+#endif
 }
 
 void md::setArgumentsRecoverable(Function &fn, bool recoverable)
@@ -234,10 +278,12 @@ void md::setArgumentsRecoverable(Function &fn, bool recoverable)
 	{
 		setFlag(fn, "fcd.recoverable");
 	}
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 7)
 	else
 	{
 		fn.setMetadata("fcd.recoverable", nullptr);
 	}
+#endif
 }
 
 void md::setStackPointerArgument(Function &fn, unsigned int argIndex)
@@ -245,14 +291,20 @@ void md::setStackPointerArgument(Function &fn, unsigned int argIndex)
 	ensureFunctionBody(fn);
 	auto& ctx = fn.getContext();
 	ConstantInt* cArgIndex = ConstantInt::get(Type::getInt32Ty(ctx), argIndex);
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 6)
 	MDNode* argIndexNode = MDNode::get(ctx, ConstantAsMetadata::get(cArgIndex));
+#endif
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 7)
 	fn.setMetadata("fcd.stackptr", argIndexNode);
+#endif
 }
 
 void md::removeStackPointerArgument(Function& fn)
 {
 	ensureFunctionBody(fn);
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 7)
 	fn.setMetadata("fcd.stackptr", nullptr);
+#endif
 }
 
 void md::setAssemblyString(Function &fn, StringRef assembly)
@@ -260,7 +312,9 @@ void md::setAssemblyString(Function &fn, StringRef assembly)
 	ensureFunctionBody(fn);
 	LLVMContext& ctx = fn.getContext();
 	MDNode* asmNode = MDNode::get(ctx, MDString::get(ctx, assembly));
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 7)
 	fn.setMetadata("fcd.asm", asmNode);
+#endif
 }
 
 void md::setStackFrame(AllocaInst &alloca)

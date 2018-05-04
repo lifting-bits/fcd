@@ -14,6 +14,8 @@
 #include "flat_binary.h"
 #include "python_executable.h"
 
+#include "remill/BC/Version.h"
+
 #include <ctype.h>
 
 using namespace llvm;
@@ -90,8 +92,10 @@ namespace
 	ElfExecutableFactory elfFactory;
 	FlatBinaryExecutableFactory flatBinaryFactory;
 	PythonExecutableFactory pythonScriptExecutableFactory;
-	
+
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 7)
 	class ExecutableFactoryParser : public cl::generic_parser_base
+
 	{
 		struct OptionInfo : public GenericOptionInfo
 		{
@@ -127,6 +131,7 @@ namespace
 			return static_cast<unsigned>(factories().size());
 		}
 		
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(4, 0)
 		virtual StringRef getOption(unsigned n) const override
 		{
 			return factories().at(n).Name;
@@ -136,7 +141,17 @@ namespace
 		{
 			return factories().at(n).HelpStr;
 		}
+#else	
+		virtual const char *getOption(unsigned n) const override
+		{
+			return factories().at(n).Name;
+		}
 		
+		virtual const char *getDescription(unsigned n) const override
+		{
+			return factories().at(n).HelpStr;
+		}
+#endif	
 		virtual const cl::GenericOptionValue& getOptionValue(unsigned n) const override
 		{
 			return factories().at(n).factory;
@@ -174,7 +189,12 @@ namespace
 	);
 	
 	cl::alias formatA("f", cl::desc("Alias for --format"), cl::aliasopt(executableFactory), whitelist());
+#else
+	ExecutableFactory* executableFactory = &autoFactory;
+#endif // LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 7)
 }
+
+
 
 string Executable::getTargetTriple() const
 {

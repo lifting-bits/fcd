@@ -40,13 +40,13 @@ void PrintableLine::print(raw_ostream &os, unsigned int indent) const
 
 PrintableItem* PrintableScope::prependItem(string line)
 {
-	prepended.emplace_back(llvm::make_unique<PrintableLine>(this, move(line)));
+	prepended.emplace_back(std::make_unique<PrintableLine>(this, move(line)));
 	return prepended.back().get();
 }
 
 PrintableItem* PrintableScope::appendItem(string line)
 {
-	return appendItem(llvm::make_unique<PrintableLine>(this, move(line)));
+	return appendItem(std::make_unique<PrintableLine>(this, move(line)));
 }
 
 PrintableItem* PrintableScope::appendItem(unique_ptr<PrintableItem> statement)

@@ -67,6 +67,6 @@ FlatBinaryExecutableFactory::FlatBinaryExecutableFactory()
 ErrorOr<unique_ptr<Executable>> FlatBinaryExecutableFactory::parse(const uint8_t* begin, const uint8_t* end)
 {
 	PrettyStackTraceString frameInfo("Parsing executable as flat binary");
-	auto executable = std::make_unique<FlatBinary>(begin, end, flatOrigin);
+	unique_ptr<Executable> executable = std::make_unique<FlatBinary>(begin, end, flatOrigin);
 	return move(executable);
 }

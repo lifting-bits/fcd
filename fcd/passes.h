@@ -13,7 +13,6 @@
 #include <llvm/Pass.h>
 #include <llvm/Analysis/AliasAnalysis.h>
 #include <llvm/Analysis/Passes.h>
-#include <llvm/Transforms/Utils/MemorySSA.h>
 
 #include "fcd/ast/pass_backend.h"
 #include "fcd/pass_asaa.h"

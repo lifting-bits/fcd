@@ -35,4 +35,6 @@ extern PyTypeObject Py_LLVMDiagnosticInfo_Type;
 extern PyTypeObject Py_LLVMBasicBlock_Type;
 extern PyTypeObject Py_LLVMType_Type;
 
+extern PyTypeObject Py_LLVMMetadata_Type;
+
 #endif /* fcd__python_bindings_h */

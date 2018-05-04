@@ -20,6 +20,8 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/IR/Module.h"
 
+#include "remill/BC/Version.h"
+
 namespace llvm {
 class FunctionType;
 class DataLayout;
@@ -81,13 +83,20 @@ inline StructorType getFromCtorType(CXXCtorType T) {
   switch (T) {
   case Ctor_Complete:
     return StructorType::Complete;
+
   case Ctor_Base:
     return StructorType::Base;
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 6)
   case Ctor_Comdat:
     llvm_unreachable("not expecting a COMDAT");
+#endif
+  
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 7)
   case Ctor_CopyingClosure:
   case Ctor_DefaultClosure:
     llvm_unreachable("not expecting a closure");
+#endif
+  
   }
   llvm_unreachable("not a CXXCtorType");
 }
@@ -112,8 +121,10 @@ inline StructorType getFromDtorType(CXXDtorType T) {
     return StructorType::Complete;
   case Dtor_Base:
     return StructorType::Base;
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 6)  
   case Dtor_Comdat:
     llvm_unreachable("not expecting a COMDAT");
+#endif
   }
   llvm_unreachable("not a CXXDtorType");
 }
@@ -174,7 +185,11 @@ public:
   ~CodeGenTypes();
 
   const llvm::DataLayout &getDataLayout() const {
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 7)
     return TheModule.getDataLayout();
+#else
+  return *TheModule.getDataLayout();
+#endif
   }
   ASTContext &getContext() const { return Context; }
   const ABIInfo &getABIInfo() const { return TheABIInfo; }
@@ -210,10 +225,12 @@ public:
   bool isFuncTypeConvertible(const FunctionType *FT);
   bool isFuncParamTypeConvertible(QualType Ty);
 
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 9)
   /// Determine if a C++ inheriting constructor should have parameters matching
   /// those of its inherited constructor.
   bool inheritingCtorHasParams(const InheritedConstructor &Inherited,
                                CXXCtorType Type);
+#endif
 
   /// GetFunctionTypeForVTable - Get the LLVM function type for use in a vtable,
   /// given a CXXMethodDecl. If the method to has an incomplete return type,
@@ -318,6 +335,7 @@ public:
                                              const FunctionProtoType *FTP,
                                              const CXXMethodDecl *MD);
 
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 9)
   /// "Arrange" the LLVM information for a call or type with the given
   /// signature.  This is largely an internal method; other clients
   /// should use one of the above routines, which ultimately defer to
@@ -331,6 +349,7 @@ public:
                                                 FunctionType::ExtInfo info,
                     ArrayRef<FunctionProtoType::ExtParameterInfo> paramInfos,
                                                 RequiredArgs args);
+#endif
 
   /// \brief Compute a new LLVM record layout object for the given record.
   CGRecordLayout *ComputeRecordLayout(const RecordDecl *D,

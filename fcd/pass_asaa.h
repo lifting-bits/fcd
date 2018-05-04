@@ -10,7 +10,7 @@
 #ifndef FCD_PASS_ASAA_H_
 #define FCD_PASS_ASAA_H_
 
-#include <llvm/Analysis/AliasAnalysis.h>
+#include "fcd/compat/AliasAnalysis.h"
 
 namespace fcd {
 
@@ -18,6 +18,8 @@ class AddressSpaceAAResult : public llvm::AAResultBase<AddressSpaceAAResult> {
   friend llvm::AAResultBase<AddressSpaceAAResult>;
 
  public:
+  AddressSpaceAAResult(const llvm::TargetLibraryInfo* TLI = nullptr);
+
   bool invalidate(llvm::Function& func,
                   const llvm::PreservedAnalyses& analyses) {
     // Stateless.
@@ -28,7 +30,8 @@ class AddressSpaceAAResult : public llvm::AAResultBase<AddressSpaceAAResult> {
                           const llvm::MemoryLocation& b);
 };
 
-class AddressSpaceAAWrapperPass : public llvm::ImmutablePass {
+class AddressSpaceAAWrapperPass : public llvm::ImmutablePass,
+                                  public AliasAnalysis {
  private:
   std::unique_ptr<AddressSpaceAAResult> result;
 
@@ -44,6 +47,9 @@ class AddressSpaceAAWrapperPass : public llvm::ImmutablePass {
   bool doInitialization(llvm::Module& module) override;
   bool doFinalization(llvm::Module& module) override;
   void getAnalysisUsage(llvm::AnalysisUsage& usage) const override;
+
+  llvm::AliasResult alias(const llvm::MemoryLocation& a,
+                          const llvm::MemoryLocation& b) override;
 };
 
 llvm::ImmutablePass* createAddressSpaceAliasAnalysis();

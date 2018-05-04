@@ -12,6 +12,8 @@
 #include "pass_backend.h"
 #include "pre_ast_cfg.h"
 
+#include "remill/BC/Version.h"
+
 #include <llvm/ADT/PostOrderIterator.h>
 #include <llvm/ADT/SCCIterator.h>
 #include <llvm/Analysis/DominanceFrontierImpl.h>
@@ -66,7 +68,7 @@ namespace
 				SmallPtrSet<PreAstBasicBlock*, 16> loopMembers(iter->begin(), iter->end());
 				for (auto block : *iter)
 				{
-					hasOutsideSuccessor = any_of(block->successors, [&](PreAstBasicBlockEdge* edge)
+					hasOutsideSuccessor = any_of(block->successors.begin(), block->successors.end(), [&](PreAstBasicBlockEdge* edge)
 					{
 						return loopMembers.count(edge->to) == 0;
 					});
@@ -81,7 +83,7 @@ namespace
 				{
 					for (auto block : *iter)
 					{
-						auto outsidePredecessorIter = find_if(block->predecessors, [&](PreAstBasicBlockEdge* edge)
+						auto outsidePredecessorIter = find_if(block->predecessors.begin(), block->predecessors.end(), [&](PreAstBasicBlockEdge* edge)
 						{
 							return loopMembers.count(edge->from) == 0;
 						});
@@ -123,12 +125,12 @@ namespace
 	
 	struct ConjunctionEntry
 	{
-		SmallVector<Expression*, 4> expressions;
+		std::vector<Expression*> expressions;
 	};
 	
-	SmallVector<Expression*, 4> splitNaryOperator(Expression& expr, NAryOperatorExpression::NAryOperatorType type)
+	std::vector<Expression*> splitNaryOperator(Expression& expr, NAryOperatorExpression::NAryOperatorType type)
 	{
-		SmallVector<Expression*, 4> result;
+		std::vector<Expression*> result;
 		if (auto nary = dyn_cast<NAryOperatorExpression>(&expr))
 		{
 			if (nary->getType() == type)
@@ -153,9 +155,9 @@ namespace
 		// (The function relies on the format of the conditionals that reaching conditions create: it's absolutely not
 		// a general-purpose expression simplification algorithm.)
 		
-		SmallVector<ConjunctionEntry, 4> inputConjunctions;
-		SmallVector<size_t, 4> sizeOneConjunctions;
-		SmallVector<size_t, 4> largerConjunctions;
+		std::vector<ConjunctionEntry> inputConjunctions;
+		std::vector<size_t> sizeOneConjunctions;
+		std::vector<size_t> largerConjunctions;
 		for (auto iter = begin; iter != end; ++iter)
 		{
 			size_t index = inputConjunctions.size();
@@ -176,7 +178,7 @@ namespace
 			}
 		}
 		
-		SmallVector<NOT_NULL(Expression), 4> resultExpressions;
+		std::vector<NOT_NULL(Expression)> resultExpressions;
 		if (sizeOneConjunctions.size() > 0)
 		{
 			do
@@ -189,7 +191,7 @@ namespace
 				while (largerEntryIter != largerConjunctions.end())
 				{
 					auto larger = &inputConjunctions[*largerEntryIter];
-					auto iter = find_if(larger->expressions, [&](Expression* expr) {
+					auto iter = find_if(larger->expressions.begin(), larger->expressions.end(), [&](Expression* expr) {
 						return areOpposites(*sizeOne->expressions.front(), *expr);
 					});
 					if (iter != larger->expressions.end())
@@ -221,7 +223,7 @@ namespace
 				
 				// The simplest and most reasonable thing to do is th simplify for expressions that are present in
 				// every remaining expressions. This is not a perfect solution, but the problem is NP-complete, so yeah.
-				SmallVector<Expression*, 1> commonSubExpressions;
+				std::vector<Expression*> commonSubExpressions;
 				for (const auto& pair : occurrences)
 				{
 					if (pair.second == largerConjunctions.size())
@@ -232,7 +234,7 @@ namespace
 				
 				if (commonSubExpressions.size() > 0)
 				{
-					SmallVector<Expression*, 4> remainingConjunctions;
+					std::vector<Expression*> remainingConjunctions;
 					for (auto conjunctionIndex : largerConjunctions)
 					{
 						auto& expressions = inputConjunctions[conjunctionIndex].expressions;
@@ -290,7 +292,7 @@ namespace
 			// exit.
 			if (!domTree.dominates(entry, exit))
 			{
-				bool onlyEntryOrExit = all_of(entrySuccessors, [=](PreAstBasicBlock* frontierBlock)
+				bool onlyEntryOrExit = all_of(entrySuccessors.begin(), entrySuccessors.end(), [=](PreAstBasicBlock* frontierBlock)
 				{
 					return frontierBlock == entry || frontierBlock == exit;
 				});
@@ -314,7 +316,7 @@ namespace
 					return false;
 				}
 				
-				bool domFrontierNotCommon = any_of(entrySuccessor->predecessors, [&](PreAstBasicBlockEdge* edge)
+				bool domFrontierNotCommon = any_of(entrySuccessor->predecessors.begin(), entrySuccessor->predecessors.end(), [&](PreAstBasicBlockEdge* edge)
 				{
 					return domTree.dominates(entry, edge->from) && !domTree.dominates(exit, edge->from);
 				});
@@ -357,7 +359,7 @@ namespace
 			// Fold blocks into one sequence. This is easy now that we can just iterate over the region range, which is
 			// sorted in post order.
 			StatementReference resultSequence;
-			SmallDenseMap<PreAstBasicBlock*, SmallVector<SmallVector<Expression*, 4>, 8>> reachingConditions;
+			SmallDenseMap<PreAstBasicBlock*, std::vector<std::vector<Expression*>>> reachingConditions;
 			
 			// Do we have loops?
 			bool isLoop = false;
@@ -476,7 +478,7 @@ namespace
 					}
 					
 					// Create OR-joined condition with condition parts after the prefix.
-					SmallVector<Expression*, 4> disjunctionTerms;
+					std::vector<Expression*> disjunctionTerms;
 					for (auto& andSequence : disjunction)
 					{
 						if (andSequence.size() != commonPrefix.size() + commonSuffix.size())
@@ -537,7 +539,7 @@ namespace
 			unordered_set<PreAstBasicBlock*> regionNodes { *entry };
 			deque<PreAstBasicBlock*> orderedLoopNodes;
 			deque<PreAstBasicBlock*> orderedRegionNodes { *entry };
-			SmallVector<PreAstBasicBlockEdge*, 4> backEdges;
+			std::vector<PreAstBasicBlockEdge*> backEdges;
 			deque<DfsStackItem> dfsStack;
 			dfsStack.emplace_back(**entry);
 			
@@ -570,7 +572,7 @@ namespace
 					orderedRegionNodes.push_back(edge->to);
 				}
 				
-				auto edgeToIter = find_if(dfsStack, [&](DfsStackItem& item) { return &item.block == edge->to; });
+				auto edgeToIter = find_if(dfsStack.begin(), dfsStack.end(), [&](DfsStackItem& item) { return &item.block == edge->to; });
 				if (edgeToIter != dfsStack.end())
 				{
 					backEdges.push_back(edge);
@@ -601,8 +603,8 @@ namespace
 			// you want deterministic output. Revisit later if necessary.
 			
 			// Collect entering and exiting edges.
-			SmallVector<PreAstBasicBlockEdge*, 4> exitingEdges;
-			SmallVector<PreAstBasicBlockEdge*, 4> enteringEdges(backEdges.begin(), backEdges.end());
+			std::vector<PreAstBasicBlockEdge*> exitingEdges;
+			std::vector<PreAstBasicBlockEdge*> enteringEdges(backEdges.begin(), backEdges.end());
 			for (PreAstBasicBlock* block : orderedLoopNodes)
 			{
 				for (PreAstBasicBlockEdge* edge : block->predecessors)
@@ -635,7 +637,7 @@ namespace
 					if (loopNodes.count(*entry) == 0)
 					{
 						// Insert new block before the first loop node.
-						auto insertPosition = find_if(blocksInReversePostOrder, [&](PreAstBasicBlock* block)
+						auto insertPosition = find_if(blocksInReversePostOrder.begin(), blocksInReversePostOrder.end(), [&](PreAstBasicBlock* block)
 						{
 							return loopNodes.count(block) != 0;
 						});
@@ -665,7 +667,7 @@ namespace
 				if (&edge != &exitingEdges.front() && edge->to != exitingEdges.front()->to)
 				{
 					PreAstBasicBlock* exitBlock = &function.createRedirectorBlock(exitingEdges);
-					loopExit = blocksInReversePostOrder.insert(find(blocksInReversePostOrder, exitingEdges.back()->from), exitBlock);
+					loopExit = blocksInReversePostOrder.insert(find(blocksInReversePostOrder.begin(), blocksInReversePostOrder.end(), exitingEdges.back()->from), exitBlock);
 					break;
 				}
 			}
@@ -719,7 +721,7 @@ namespace
 			if (regionSize == 1)
 			{
 				// Don't waste time on single-block regions, unless they loop.
-				if (!any_of(entry->successors, [=](PreAstBasicBlockEdge* edge) { return edge->to == entry; }))
+				if (!any_of(entry->successors.begin(), entry->successors.end(), [=](PreAstBasicBlockEdge* edge) { return edge->to == entry; }))
 				{
 					return false;
 				}
@@ -775,7 +777,7 @@ namespace
 		
 		StatementReference structurizeFunction()
 		{
-			for (PreAstBasicBlock* entry : post_order(&function))
+			for (PreAstBasicBlock* entry : llvm::make_range(po_begin(&function), po_end(&function)))
 			{
 				blocksInReversePostOrder.push_front(entry);
 				
@@ -888,8 +890,13 @@ void AstBackEnd::runOnFunction(Function& fn)
 	ensureLoopsExit(*blockGraph);
 	
 	// Compute regions.
+#if LLVM_VERSION_NUMBER >= LLVM_VERSION(5, 0)
+	PreAstBasicBlockRegionTraits::DomTreeT domTree;
+	PreAstBasicBlockRegionTraits::PostDomTreeT postDomTree;
+#else
 	PreAstBasicBlockRegionTraits::DomTreeT domTree(false);
 	PreAstBasicBlockRegionTraits::PostDomTreeT postDomTree(true);
+#endif
 	PreAstBasicBlockRegionTraits::DomFrontierT dominanceFrontier;
 	domTree.recalculate(*blockGraph);
 	postDomTree.recalculate(*blockGraph);

@@ -26,7 +26,7 @@ namespace fcd {
 
 class RemillArgumentRecovery : public llvm::ModulePass {
  private:
-  const char* cPrefix = "argrec_";
+  const std::string cPrefix = "argrec_";
   CallingConvention cc;
  public:
   static char ID;

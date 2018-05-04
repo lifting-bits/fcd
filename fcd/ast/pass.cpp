@@ -6,6 +6,8 @@
 // This file is distributed under the University of Illinois Open Source
 // license. See LICENSE.md for details.
 //
+#include <gflags/gflags.h>
+#include <glog/logging.h>
 
 #include "pass.h"
 
@@ -53,7 +55,7 @@ void AstFunctionPass::doRun(deque<unique_ptr<FunctionNode>>& list)
 	{
 		if (runOnDeclarations || fn->hasBody())
 		{
-			PrettyStackTraceFormat runPass("Running AST pass \"%s\" on function \"%s\"", getName(), string(fn->getFunction().getName()).c_str());
+			LOG(INFO) << "Running AST pass " << getName() << " on function " << fn->getFunction().getName().str();
 			
 			this->fn = fn.get();
 			doRun(*fn);

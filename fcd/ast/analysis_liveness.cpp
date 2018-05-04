@@ -217,7 +217,7 @@ bool LivenessAnalysis::liveRangeContains(Expression *liveVariable, Statement *st
 
 bool LivenessAnalysis::interferenceFree(Expression *a, Expression *b)
 {
-	return !any_of(usingStatements.at(b), [=](ExpressionUseRoot& useDef)
+	return !any_of(usingStatements.at(b).begin(), usingStatements.at(b).end(), [=](ExpressionUseRoot& useDef)
 	{
 		if (useDef.isDef())
 		{
