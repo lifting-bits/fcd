@@ -30,8 +30,8 @@ Most of Fcd+Remill's dependencies can be provided by the [cxx-common](https://gi
 | [CMake](https://cmake.org/) | 3.2+ |
 | [Google Flags](https://github.com/google/glog) | Latest |
 | [Google Log](https://github.com/google/glog) | Latest |
-| [LLVM](http://llvm.org/) | 3.5 - 5.0 |
-| [Clang](http://clang.llvm.org/) | 3.5 - 5.0 |
+| [LLVM](http://llvm.org/) | 3.5+|
+| [Clang](http://clang.llvm.org/) | 3.5+|
 | [Remill](https://github.com/trailofbits/remill) | Latest |
 | [Python](https://www.python.org/) | 2.7 |
 | [Zlib](https://www.zlib.net/) | Latest |
