@@ -28,7 +28,11 @@
 #include <llvm/Support/Path.h>
 #include <llvm/Support/PrettyStackTrace.h>
 
-#include <dlfcn.h>
+#ifdef WIN32
+	#include <windows.h>
+#else
+    #include <dlfcn.h>
+#endif
 
 #include "remill/BC/Version.h"
 
@@ -44,10 +48,8 @@ using namespace llvm;
 using namespace std;
 
 // Default include paths are handled by drivers, so we run a nasty pre-build script to get them.
-extern "C" {
-	extern const char* defaultHeaderSearchPathList[];
-	extern const char* defaultFrameworkSearchPathList[];
-}
+extern const char* defaultHeaderSearchPathList[];
+extern const char* defaultFrameworkSearchPathList[];
 
 namespace
 {
@@ -92,25 +94,54 @@ namespace
 	
 	string getClangResourcesPath()
 	{
+		std::string module_path;
+
+#ifdef WIN32
+		auto module = GetModuleHandleA("libclang.dll");
+		if (module == nullptr) {
+			llvm_unreachable("Failed to locate the libclang.dll library");
+		}
+
+		char path[4096] = {};
+		if (GetModuleFileName(module, path, sizeof(path)) == 0) {
+			llvm_unreachable("Failed to query the full path for the libclang.dll library");
+		}
+
+		module_path = path;
+
+#else
 		Dl_info info;
 		if (dladdr(reinterpret_cast<void*>(clang_createTranslationUnit), &info) == 0)
 		{
 			llvm_unreachable("fcd isn't linked against libclang?!");
 		}
+
+		module_path = info.dli_fname;
+#endif
 		
-		SmallString<128> parentPath = sys::path::parent_path(info.dli_fname);
+		SmallString<128> parentPath = sys::path::parent_path(module_path);
 		sys::path::append(parentPath, "clang", CLANG_VERSION_STRING);
 		return parentPath.str();
 	}
 	
 	string getSelfPath()
 	{
+#ifdef WIN32
+        char path[4096] = {};
+		DWORD buffer_size = sizeof(path);
+		if (QueryFullProcessImageNameA(GetCurrentProcess(), 0, path, &buffer_size) == 0) {
+			llvm_unreachable("Failed to obtain the fcd executable path");
+		}
+
+		return std::string(path);
+#else
 		Dl_info info;
 		if (dladdr(reinterpret_cast<void*>(getSelfPath), &info) == 0)
 		{
 			llvm_unreachable("linker doesn't know where executable itself is?!");
 		}
 		return info.dli_fname;
+#endif
 	}
 
 #if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 9)

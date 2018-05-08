@@ -112,13 +112,14 @@ public:
 	template<typename T>
 	T* allocateDynamic(size_t count = 1, size_t alignment = alignof(T))
 	{
-		size_t totalSize;
-		if (__builtin_umull_overflow(count, sizeof(T), &totalSize))
+		unsigned long tempTotalSize = 0U;
+		if (__builtin_umull_overflow(count, sizeof(T), &tempTotalSize))
 		{
 			assert(false);
 			return nullptr;
 		}
-		
+
+		auto totalSize = static_cast<std::size_t>(tempTotalSize);		
 		if (totalSize < HalfPageSize)
 		{
 			return new (allocateSmall(totalSize, alignment)) T[count];

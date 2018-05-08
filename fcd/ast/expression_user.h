@@ -109,6 +109,7 @@ public:
 		
 		UseIterator(const UseIterator&) = default;
 		UseIterator(UseIterator&&) = default;
+		UseIterator &operator=(const UseIterator &other) = default;
 		
 		OptionallyConst<IsConst, ExpressionUse>& operator*() { return *operator->(); }
 		OptionallyConst<IsConst, ExpressionUse>* operator->() { return useListEnd - index - 1; }
