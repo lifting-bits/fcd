@@ -348,6 +348,6 @@ PythonExecutableFactory::PythonExecutableFactory()
 				
 ErrorOr<unique_ptr<Executable>> PythonExecutableFactory::parse(const uint8_t* begin, const uint8_t* end)
 {
-	LOG(INFO) << "Parsing executable with Python script " << scriptPath;
+	DLOG(INFO) << "Parsing executable with Python script " << scriptPath;
 	return PythonParsedExecutable::create(scriptPath, begin, end);
 }

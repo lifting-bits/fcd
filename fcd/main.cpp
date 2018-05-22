@@ -16,7 +16,6 @@
 #include <llvm/IRReader/IRReader.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/Path.h>
-#include <llvm/Support/PrettyStackTrace.h>
 #include <llvm/Support/Signals.h>
 #include <llvm/Support/SourceMgr.h>
 
@@ -167,8 +166,8 @@ static std::unique_ptr<llvm::Module> LiftExecutable(Executable& executable) {
   std::list<uint64_t> entry_points;
   if (isFullDisassembly()) {
     for (uint64_t addr : EPR.getVisibleEntryPoints()) {
-      CHECK(EPR.getInfo(addr))
-          << "No symbol info for address " << std::hex << addr << std::dec;
+      CHECK(EPR.getInfo(addr)) << "No symbol info for address " << std::hex
+                               << addr << std::dec;
       entry_points.push_back(addr);
     }
   }
@@ -249,7 +248,7 @@ static std::unique_ptr<llvm::Module> LiftExecutable(Executable& executable) {
 static bool RunPassPipeline(llvm::Module& module,
                             std::vector<llvm::Pass*> passes,
                             Executable* executable = nullptr) {
-  llvm::PrettyStackTraceString optimize("Optimizing LLVM IR");
+  LOG(INFO) << "Optimizing LLVM IR";
 
   auto AACallBack = [](llvm::Pass& p, llvm::Function& f, llvm::AAResults& r) {
     if (auto asaa =
@@ -275,7 +274,7 @@ static bool RunPassPipeline(llvm::Module& module,
 
 static bool GeneratePseudocode(llvm::Module& module,
                                llvm::raw_ostream& output) {
-  llvm::PrettyStackTraceString pseudocode("Generating pseudo-C output");
+  LOG(INFO) << "Generating pseudo-C output";
 
   // Run that module through the output pass
   // UnwrapReturns happens after value propagation because value propagation
@@ -345,14 +344,6 @@ static bool InitOptPassPipeline(std::vector<llvm::Pass*>& passes) {
 
 int main(int argc, char** argv) {
   std::stringstream ss("");
-
-  llvm::EnablePrettyStackTrace();
-
-#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 7)
-  llvm::sys::PrintStackTraceOnErrorSignal(argv[0]);
-#else
-  llvm::sys::PrintStackTraceOnErrorSignal();
-#endif
 
   google::InitGoogleLogging(argv[0]);
   google::SetUsageMessage(ss.str());

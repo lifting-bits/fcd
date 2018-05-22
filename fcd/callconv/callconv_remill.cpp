@@ -119,8 +119,7 @@ static const ArgConstraint *ParamTable(const remill::Arch *arch,
 
   } else if (llvm::CallingConv::X86_ThisCall == cc) {
     static const ArgConstraint kX86ThisCallArgs[] = {
-        {"ECX", kIntegralLeast32},
-        {nullptr, kInvalidKind},
+        {"ECX", kIntegralLeast32}, {nullptr, kInvalidKind},
     };
     return &(kX86ThisCallArgs[0]);
 
@@ -192,8 +191,7 @@ static const ArgConstraint *ReturnTable(const remill::Arch *arch,
   } else if (llvm::CallingConv::C == cc) {
     if (arch->IsX86()) {
       static const ArgConstraint kX86CDeclCallArgs[] = {
-          {"EAX", kIntegralLeast32 | kF32},
-          {nullptr, kInvalidKind},
+          {"EAX", kIntegralLeast32 | kF32}, {nullptr, kInvalidKind},
       };
       return &(kX86CDeclCallArgs[0]);  // cdecl takes all args on the stack.
 
