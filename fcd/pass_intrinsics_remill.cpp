@@ -60,8 +60,7 @@ static bool IsRemillLiftingArgType(llvm::Type *type) {
 char RemillFixIntrinsics::ID = 0;
 
 RemillFixIntrinsics::RemillFixIntrinsics(void)
-    : ModulePass(RemillFixIntrinsics::ID) {
-}
+    : ModulePass(RemillFixIntrinsics::ID) {}
 
 void RemillFixIntrinsics::getAnalysisUsage(llvm::AnalysisUsage &usage) const {}
 

@@ -63,7 +63,7 @@ set(FCD fcd-${REMILL_LLVM_VERSION})
 # old fcd stuff
 #
 # todo(msurovic): remove this once python bindings and header parsing are refactored
-set(subdirs fcd/ fcd/ast fcd/callconv fcd/clang fcd/codegen fcd/executables fcd/symbols)
+set(subdirs fcd/ fcd/ast fcd/ast_remill fcd/callconv fcd/clang fcd/codegen fcd/executables fcd/symbols)
 set(pythonbindingsfile "${CMAKE_CURRENT_BINARY_DIR}/bindings.cpp")
 set(subdirs ${subdirs} fcd/python)
 list(APPEND PROJECT_INCLUDEDIRECTORIES ${subdirs})
