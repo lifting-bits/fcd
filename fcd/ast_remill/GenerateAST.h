@@ -18,6 +18,7 @@
 #define FCD_AST_GENERATEAST_H_
 
 #include <llvm/Analysis/Passes.h>
+#include <llvm/IR/InstVisitor.h>
 #include <llvm/IR/Module.h>
 
 #include <clang/AST/ASTContext.h>
@@ -25,14 +26,16 @@
 namespace fcd {
 
 class ASTGenerator : public llvm::InstVisitor<ASTGenerator> {
-  private:
-    clang::ASTContext ctx;
+ private:
+  clang::ASTContext *ast_ctx;
 
-    visitLoadInst(llvm::LoadInst);
-    visitStoreInst(llvm::StoreInst);
+ public:
+  ASTGenerator(clang::ASTContext *ctx);
   
-  public:
-    ASTGenerator(clang::ASTContext ctx);
+  void visitCallInst(llvm::CallInst &inst);
+  void visitAllocaInst(llvm::AllocaInst &inst);
+  void visitLoadInst(llvm::LoadInst &inst);
+  void visitStoreInst(llvm::StoreInst &inst);
 };
 
 class GenerateAST : public llvm::ModulePass {

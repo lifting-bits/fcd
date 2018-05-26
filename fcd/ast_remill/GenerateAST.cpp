@@ -17,16 +17,53 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
+#include <llvm/ADT/PostOrderIterator.h>
+#include <llvm/Analysis/CFG.h>
+
 #include <clang/AST/ASTContext.h>
 #include <clang/Basic/Builtins.h>
 #include <clang/Basic/TargetInfo.h>
 #include <clang/Frontend/CompilerInstance.h>
 
 #include <memory>
+#include <unordered_set>
+#include <vector>
+
+#include "remill/BC/Util.h"
 
 #include "fcd/ast_remill/GenerateAST.h"
 
 namespace fcd {
+
+ASTGenerator::ASTGenerator(clang::ASTContext *ctx) : ast_ctx(ctx) {}
+
+void ASTGenerator::visitCallInst(llvm::CallInst &inst) {
+  DLOG(INFO) << "visitCallInst: " << remill::LLVMThingToString(&inst);
+}
+
+void ASTGenerator::visitAllocaInst(llvm::AllocaInst &inst) {
+  DLOG(INFO) << "visitAllocaInst: " << remill::LLVMThingToString(&inst);
+}
+
+void ASTGenerator::visitLoadInst(llvm::LoadInst &inst) {
+  DLOG(INFO) << "visitLoadInst: " << remill::LLVMThingToString(&inst);
+}
+
+void ASTGenerator::visitStoreInst(llvm::StoreInst &inst) {
+  DLOG(INFO) << "visitStoreInst: " << remill::LLVMThingToString(&inst);
+}
+
+namespace {
+
+static void StructureAcyclicRegion() {
+  DLOG(INFO) << "Structuring acyclic region";
+}
+
+static void StructureCyclicRegion() {
+  DLOG(INFO) << "Structuring cyclic region";
+}
+
+}  // namespace
 
 char GenerateAST::ID = 0;
 
@@ -54,14 +91,37 @@ bool GenerateAST::runOnModule(llvm::Module &module) {
   ins.createASTContext();
 
   auto &ast = ins.getASTContext();
-
-  ASTGenerator gen(ast);
-
-  gen.visit();
-
   // auto top = ast.getTranslationUnitDecl();
+
+  ASTGenerator gen(&ast);
+  gen.visit(module);
+
+  using CFGEdge = std::pair<const llvm::BasicBlock *, const llvm::BasicBlock *>;
+
+  for (auto &func : module) {
+    // Compute back edges using a DFS walk of the CFG
+    llvm::SmallVector<CFGEdge, 10> back_edges;
+    llvm::FindFunctionBackedges(func, back_edges);
+    // Extract loop headers
+    std::unordered_set<const llvm::BasicBlock *> loop_headers;
+    for (auto edge : back_edges) {
+      loop_headers.insert(edge.second);
+    }
+    // Walk the CFG in post-order and structurize regions
+    auto po_walk = llvm::make_range(llvm::po_begin(&func), llvm::po_end(&func));
+    for (auto block : po_walk) {
+      if (loop_headers.count(block) > 0) {
+        StructureCyclicRegion();
+      } else {
+        StructureAcyclicRegion();
+      }
+    }
+  }
+
   return true;
 }
+
+llvm::ModulePass *createGenerateASTPass(void) { return new GenerateAST; }
 
 }  // namespace fcd
 

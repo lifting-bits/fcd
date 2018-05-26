@@ -27,6 +27,8 @@
 
 #include "remill/BC/Util.h"
 
+#include "fcd/ast_remill/GenerateAST.h"
+
 #include "fcd/ast/ast_passes.h"
 #include "fcd/codegen/translation_context_remill.h"
 #include "fcd/compat/AliasAnalysis.h"
@@ -280,18 +282,22 @@ static bool GeneratePseudocode(llvm::Module& module,
   // UnwrapReturns happens after value propagation because value propagation
   // doesn't know that calls
   // are generally not safe to reorder.
-  AstBackEnd* backend = createAstBackEnd();
-  backend->addPass(new AstRemoveUndef);
-  backend->addPass(new AstConsecutiveCombiner);
-  backend->addPass(new AstNestedCombiner);
-  backend->addPass(new AstConsecutiveCombiner);
-  backend->addPass(new AstSimplifyExpressions);
-  backend->addPass(new AstMergeCongruentVariables);
-  backend->addPass(new AstConsecutiveCombiner);
-  backend->addPass(new AstNestedCombiner);
-  backend->addPass(new AstConsecutiveCombiner);
-  backend->addPass(new AstPrint(output, md::getIncludedFiles(module)));
-  backend->runOnModule(module);
+  // AstBackEnd* backend = createAstBackEnd();
+  // backend->addPass(new AstRemoveUndef);
+  // backend->addPass(new AstConsecutiveCombiner);
+  // backend->addPass(new AstNestedCombiner);
+  // backend->addPass(new AstConsecutiveCombiner);
+  // backend->addPass(new AstSimplifyExpressions);
+  // backend->addPass(new AstMergeCongruentVariables);
+  // backend->addPass(new AstConsecutiveCombiner);
+  // backend->addPass(new AstNestedCombiner);
+  // backend->addPass(new AstConsecutiveCombiner);
+  // backend->addPass(new AstPrint(output, md::getIncludedFiles(module)));
+  // backend->runOnModule(module);
+  
+  llvm::legacy::PassManager pm;
+  pm.add(fcd::createGenerateASTPass());
+  pm.run(module);
   return true;
 }
 
@@ -346,6 +352,7 @@ int main(int argc, char** argv) {
   std::stringstream ss("");
 
   google::InitGoogleLogging(argv[0]);
+  google::InstallFailureSignalHandler();
   google::SetUsageMessage(ss.str());
   google::ParseCommandLineFlags(&argc, &argv, true);
 
