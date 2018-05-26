@@ -22,23 +22,38 @@
 #include <llvm/IR/Module.h>
 
 #include <clang/AST/ASTContext.h>
+#include <clang/Frontend/CompilerInstance.h>
+
+#include <memory>
 
 namespace fcd {
 
 class ASTGenerator : public llvm::InstVisitor<ASTGenerator> {
  private:
-  clang::ASTContext *ast_ctx;
+  clang::CompilerInstance *cc_ins;
+  clang::DeclContext *decl_ctx;
+
+  clang::QualType GetClangQualType(llvm::Type *type);
+
+  std::unordered_map<clang::DeclContext *, unsigned> decl_cnt;
 
  public:
-  ASTGenerator(clang::ASTContext *ctx);
-  
+  ASTGenerator(clang::CompilerInstance &ins);
+
   void visitCallInst(llvm::CallInst &inst);
   void visitAllocaInst(llvm::AllocaInst &inst);
   void visitLoadInst(llvm::LoadInst &inst);
   void visitStoreInst(llvm::StoreInst &inst);
+  // void visitInstruction(llvm::Instruction &inst);
 };
 
 class GenerateAST : public llvm::ModulePass {
+ private:
+  std::unique_ptr<ASTGenerator> ast_gen;
+
+  void StructureAcyclicRegion(llvm::BasicBlock *block);
+  void StructureCyclicRegion(llvm::BasicBlock *block);
+
  public:
   static char ID;
 

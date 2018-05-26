@@ -20,12 +20,11 @@
 #include <llvm/ADT/PostOrderIterator.h>
 #include <llvm/Analysis/CFG.h>
 
-#include <clang/AST/ASTContext.h>
 #include <clang/Basic/Builtins.h>
 #include <clang/Basic/TargetInfo.h>
-#include <clang/Frontend/CompilerInstance.h>
+#include "clang/Lex/Preprocessor.h"
 
-#include <memory>
+#include <sstream>
 #include <unordered_set>
 #include <vector>
 
@@ -35,7 +34,12 @@
 
 namespace fcd {
 
-ASTGenerator::ASTGenerator(clang::ASTContext *ctx) : ast_ctx(ctx) {}
+ASTGenerator::ASTGenerator(clang::CompilerInstance &ins)
+    : cc_ins(&ins), decl_ctx(ins.getASTContext().getTranslationUnitDecl()) {}
+
+clang::QualType ASTGenerator::GetClangQualType(llvm::Type *type) {
+  return cc_ins->getASTContext().VoidPtrTy;
+}
 
 void ASTGenerator::visitCallInst(llvm::CallInst &inst) {
   DLOG(INFO) << "visitCallInst: " << remill::LLVMThingToString(&inst);
@@ -43,6 +47,23 @@ void ASTGenerator::visitCallInst(llvm::CallInst &inst) {
 
 void ASTGenerator::visitAllocaInst(llvm::AllocaInst &inst) {
   DLOG(INFO) << "visitAllocaInst: " << remill::LLVMThingToString(&inst);
+  // Create an identifier
+  auto &itable = cc_ins->getPreprocessor().getIdentifierTable();
+  std::stringstream name;
+  // Make a name
+  if (inst.hasName()) {
+    name << inst.getName().str();
+  } else {
+    name << "var"
+         << std::distance(decl_ctx->decls_begin(), decl_ctx->decls_end());
+  }
+  // Declare a variable
+  auto var = clang::VarDecl::Create(
+      cc_ins->getASTContext(), decl_ctx, clang::SourceLocation(),
+      clang::SourceLocation(), &itable.get(name.str()),
+      GetClangQualType(inst.getType()), nullptr, clang::SC_None);
+  // Add it to the current DeclContext
+  decl_ctx->addDecl(var);
 }
 
 void ASTGenerator::visitLoadInst(llvm::LoadInst &inst) {
@@ -53,17 +74,19 @@ void ASTGenerator::visitStoreInst(llvm::StoreInst &inst) {
   DLOG(INFO) << "visitStoreInst: " << remill::LLVMThingToString(&inst);
 }
 
-namespace {
+// void ASTGenerator::visitInstruction(llvm::Instruction &inst) {
+//   DLOG(INFO) << "visitInstruction: " << remill::LLVMThingToString(&inst);
+// }
 
-static void StructureAcyclicRegion() {
+void GenerateAST::StructureAcyclicRegion(llvm::BasicBlock *block) {
   DLOG(INFO) << "Structuring acyclic region";
+  ast_gen->visit(block);
 }
 
-static void StructureCyclicRegion() {
+void GenerateAST::StructureCyclicRegion(llvm::BasicBlock *block) {
   DLOG(INFO) << "Structuring cyclic region";
+  ast_gen->visit(block);
 }
-
-}  // namespace
 
 char GenerateAST::ID = 0;
 
@@ -90,15 +113,14 @@ bool GenerateAST::runOnModule(llvm::Module &module) {
   ins.createPreprocessor(clang::TU_Complete);
   ins.createASTContext();
 
-  auto &ast = ins.getASTContext();
-  // auto top = ast.getTranslationUnitDecl();
-
-  ASTGenerator gen(&ast);
-  gen.visit(module);
+  ast_gen = std::make_unique<ASTGenerator>(ins);
 
   using CFGEdge = std::pair<const llvm::BasicBlock *, const llvm::BasicBlock *>;
 
   for (auto &func : module) {
+    if (func.isDeclaration()) {
+      continue;
+    }
     // Compute back edges using a DFS walk of the CFG
     llvm::SmallVector<CFGEdge, 10> back_edges;
     llvm::FindFunctionBackedges(func, back_edges);
@@ -111,12 +133,15 @@ bool GenerateAST::runOnModule(llvm::Module &module) {
     auto po_walk = llvm::make_range(llvm::po_begin(&func), llvm::po_end(&func));
     for (auto block : po_walk) {
       if (loop_headers.count(block) > 0) {
-        StructureCyclicRegion();
+        StructureCyclicRegion(block);
       } else {
-        StructureAcyclicRegion();
+        StructureAcyclicRegion(block);
       }
     }
   }
+
+  ins.getASTContext().getTranslationUnitDecl()->dump();
+  // ins.getASTContext().getTranslationUnitDecl()->print(llvm::outs());
 
   return true;
 }
