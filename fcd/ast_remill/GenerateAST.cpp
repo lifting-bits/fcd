@@ -25,6 +25,7 @@
 #include "clang/Lex/Preprocessor.h"
 
 #include <sstream>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -78,21 +79,35 @@ void ASTGenerator::visitStoreInst(llvm::StoreInst &inst) {
 //   DLOG(INFO) << "visitInstruction: " << remill::LLVMThingToString(&inst);
 // }
 
-void GenerateAST::StructureAcyclicRegion(llvm::BasicBlock *block) {
-  DLOG(INFO) << "Structuring acyclic region";
+namespace {
+
+static void CFGSlice(
+    llvm::BasicBlock *source, llvm::BasicBlock *sink,
+    std::unordered_map<llvm::BasicBlock *, llvm::BasicBlock *> &result) {}
+}
+
+void GenerateAST::GetOrCreateAST(llvm::BasicBlock *block) {
+  auto name = block->hasName() ? block->getName().str() : "<no_name>";
+  DLOG(INFO) << "Generating AST for block " << name;
   ast_gen->visit(block);
 }
 
-void GenerateAST::StructureCyclicRegion(llvm::BasicBlock *block) {
-  DLOG(INFO) << "Structuring cyclic region";
-  ast_gen->visit(block);
+void GenerateAST::StructureAcyclicRegion(llvm::Region *region) {
+  DLOG(INFO) << "Structuring acyclic region " << region->getNameStr();
+}
+
+void GenerateAST::StructureCyclicRegion(llvm::Region *region) {
+  DLOG(INFO) << "Structuring cyclic region " << region->getNameStr();
 }
 
 char GenerateAST::ID = 0;
 
 GenerateAST::GenerateAST(void) : ModulePass(GenerateAST::ID) {}
 
-void GenerateAST::getAnalysisUsage(llvm::AnalysisUsage &usage) const {}
+void GenerateAST::getAnalysisUsage(llvm::AnalysisUsage &usage) const {
+  usage.addRequired<llvm::DominatorTreeWrapperPass>();
+  usage.addRequired<llvm::RegionInfoPass>();
+}
 
 bool GenerateAST::runOnModule(llvm::Module &module) {
   clang::CompilerInstance ins;
@@ -121,6 +136,7 @@ bool GenerateAST::runOnModule(llvm::Module &module) {
     if (func.isDeclaration()) {
       continue;
     }
+    DLOG(INFO) << "Generating AST for function " << func.getName().str();
     // Compute back edges using a DFS walk of the CFG
     llvm::SmallVector<CFGEdge, 10> back_edges;
     llvm::FindFunctionBackedges(func, back_edges);
@@ -130,17 +146,24 @@ bool GenerateAST::runOnModule(llvm::Module &module) {
       loop_headers.insert(edge.second);
     }
     // Walk the CFG in post-order and structurize regions
+    auto regions = &getAnalysis<llvm::RegionInfoPass>(func).getRegionInfo();
     auto po_walk = llvm::make_range(llvm::po_begin(&func), llvm::po_end(&func));
     for (auto block : po_walk) {
-      if (loop_headers.count(block) > 0) {
-        StructureCyclicRegion(block);
-      } else {
-        StructureAcyclicRegion(block);
+      GetOrCreateAST(block);
+      // Check if `block` is the head of a region
+      auto region = regions->getRegionFor(block);
+      if (block == region->getEntry()) {
+        // Check if `region` contains a cycle
+        if (loop_headers.count(block) > 0) {
+          StructureCyclicRegion(region);
+        } else {
+          StructureAcyclicRegion(region);
+        }
       }
     }
   }
 
-  ins.getASTContext().getTranslationUnitDecl()->dump();
+  // ins.getASTContext().getTranslationUnitDecl()->dump();
   // ins.getASTContext().getTranslationUnitDecl()->print(llvm::outs());
 
   return true;

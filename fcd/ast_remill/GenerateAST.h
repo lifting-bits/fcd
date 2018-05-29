@@ -18,6 +18,7 @@
 #define FCD_AST_GENERATEAST_H_
 
 #include <llvm/Analysis/Passes.h>
+#include <llvm/Analysis/RegionInfo.h>
 #include <llvm/IR/InstVisitor.h>
 #include <llvm/IR/Module.h>
 
@@ -51,8 +52,9 @@ class GenerateAST : public llvm::ModulePass {
  private:
   std::unique_ptr<ASTGenerator> ast_gen;
 
-  void StructureAcyclicRegion(llvm::BasicBlock *block);
-  void StructureCyclicRegion(llvm::BasicBlock *block);
+  void GetOrCreateAST(llvm::BasicBlock *block);
+  void StructureAcyclicRegion(llvm::Region *region);
+  void StructureCyclicRegion(llvm::Region *region);
 
  public:
   static char ID;
