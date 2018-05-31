@@ -39,7 +39,58 @@ ASTGenerator::ASTGenerator(clang::CompilerInstance &ins)
     : cc_ins(&ins), decl_ctx(ins.getASTContext().getTranslationUnitDecl()) {}
 
 clang::QualType ASTGenerator::GetClangQualType(llvm::Type *type) {
-  return cc_ins->getASTContext().VoidPtrTy;
+  clang::QualType result;
+  auto &ctx = cc_ins->getASTContext();
+  switch (type->getTypeID()) {
+    case llvm::Type::VoidTyID:
+      result = ctx.VoidTy;
+      break;
+
+    case llvm::Type::HalfTyID:
+      result = ctx.HalfTy;
+      break;
+
+    case llvm::Type::FloatTyID:
+      result = ctx.FloatTy;
+      break;
+
+    case llvm::Type::DoubleTyID:
+      result = ctx.DoubleTy;
+      break;
+
+    case llvm::Type::IntegerTyID: {
+      auto size = type->getIntegerBitWidth();
+      CHECK(size > 0) << "Integer bit width has to be greater than 0";
+      if (size == 1) {
+        result = ctx.BoolTy;
+      } else if (size <= 8) {
+        result = ctx.UnsignedCharTy;
+      } else if (size <= 16) {
+        result = ctx.UnsignedShortTy;
+      } else if (size <= 32) {
+        result = ctx.UnsignedLongTy;
+      } else if (size <= 64) {
+        result = ctx.UnsignedLongLongTy;
+      } else if (size <= 128) {
+        result = ctx.UnsignedInt128Ty;
+      } else {
+        LOG(WARNING)
+            << "Integer bit width greater than 128; Returning UnsignedInt128Ty";
+        result = ctx.UnsignedInt128Ty;
+      }
+    } break;
+
+    case llvm::Type::PointerTyID: {
+      auto ptr = llvm::cast<llvm::PointerType>(type);
+      result = ctx.getPointerType(GetClangQualType(ptr->getElementType()));
+    } break;
+
+    default:
+      LOG(FATAL) << "Unknown LLVM Type";
+      break;
+  }
+
+  return result;
 }
 
 void ASTGenerator::visitCallInst(llvm::CallInst &inst) {
@@ -62,7 +113,7 @@ void ASTGenerator::visitAllocaInst(llvm::AllocaInst &inst) {
   auto var = clang::VarDecl::Create(
       cc_ins->getASTContext(), decl_ctx, clang::SourceLocation(),
       clang::SourceLocation(), &itable.get(name.str()),
-      GetClangQualType(inst.getType()), nullptr, clang::SC_None);
+      GetClangQualType(inst.getAllocatedType()), nullptr, clang::SC_None);
   // Add it to the current DeclContext
   decl_ctx->addDecl(var);
 }
@@ -84,7 +135,7 @@ namespace {
 static void CFGSlice(
     llvm::BasicBlock *source, llvm::BasicBlock *sink,
     std::unordered_map<llvm::BasicBlock *, llvm::BasicBlock *> &result) {}
-}
+}  // namespace
 
 void GenerateAST::GetOrCreateAST(llvm::BasicBlock *block) {
   auto name = block->hasName() ? block->getName().str() : "<no_name>";
@@ -164,7 +215,7 @@ bool GenerateAST::runOnModule(llvm::Module &module) {
   }
 
   // ins.getASTContext().getTranslationUnitDecl()->dump();
-  // ins.getASTContext().getTranslationUnitDecl()->print(llvm::outs());
+  ins.getASTContext().getTranslationUnitDecl()->print(llvm::outs());
 
   return true;
 }
