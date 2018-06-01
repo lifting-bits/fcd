@@ -26,21 +26,23 @@
 #include <clang/Frontend/CompilerInstance.h>
 
 #include <memory>
+#include <unordered_map>
 
 namespace fcd {
 
 class ASTGenerator : public llvm::InstVisitor<ASTGenerator> {
  private:
   clang::CompilerInstance *cc_ins;
-  clang::DeclContext *decl_ctx;
 
-  clang::QualType GetClangQualType(llvm::Type *type);
-
-  std::unordered_map<clang::DeclContext *, unsigned> decl_cnt;
+  std::unordered_map<llvm::Value *, clang::Decl *> decls;
+  std::unordered_map<llvm::Value *, clang::Stmt *> stmts;
 
  public:
   ASTGenerator(clang::CompilerInstance &ins);
 
+  void VisitGlobalVar(llvm::GlobalVariable &var);
+  void VisitFunctionDecl(llvm::Function &func);
+  
   void visitCallInst(llvm::CallInst &inst);
   void visitAllocaInst(llvm::AllocaInst &inst);
   void visitLoadInst(llvm::LoadInst &inst);
