@@ -37,8 +37,11 @@ namespace fcd {
 
 namespace {
 
-static clang::QualType GetClangQualType(clang::ASTContext &ctx,
-                                        llvm::Type *type) {
+static clang::QualType GetQualType(clang::ASTContext &ctx, llvm::Type *type,
+                                   bool constant = false) {
+  // DLOG(INFO) << "GetQualType: " << (constant ? "constant " : "")
+  //            << remill::LLVMThingToString(type);
+
   clang::QualType result;
 
   switch (type->getTypeID()) {
@@ -80,9 +83,33 @@ static clang::QualType GetClangQualType(clang::ASTContext &ctx,
       }
     } break;
 
+    case llvm::Type::FunctionTyID: {
+      auto func = llvm::cast<llvm::FunctionType>(type);
+      auto ret = GetQualType(ctx, func->getReturnType(), constant);
+      std::vector<clang::QualType> params;
+      for (auto param : func->params()) {
+        params.push_back(GetQualType(ctx, param, constant));
+      }
+      result = ctx.getFunctionType(ret, params,
+                                   clang::FunctionProtoType::ExtProtoInfo());
+    } break;
+
     case llvm::Type::PointerTyID: {
       auto ptr = llvm::cast<llvm::PointerType>(type);
-      result = ctx.getPointerType(GetClangQualType(ctx, ptr->getElementType()));
+      result =
+          ctx.getPointerType(GetQualType(ctx, ptr->getElementType(), constant));
+    } break;
+
+    case llvm::Type::ArrayTyID: {
+      auto arr = llvm::cast<llvm::ArrayType>(type);
+      auto elm = GetQualType(ctx, arr->getElementType(), constant);
+      if (constant) {
+        result = ctx.getConstantArrayType(
+            elm, llvm::APInt(32, arr->getNumElements()),
+            clang::ArrayType::ArraySizeModifier::Normal, 0);
+      } else {
+        LOG(FATAL) << "Unknown LLVM ArrayType";
+      }
     } break;
 
     default:
@@ -93,12 +120,39 @@ static clang::QualType GetClangQualType(clang::ASTContext &ctx,
   return result;
 }
 
-static clang::VarDecl *CreateClangVarDecl(clang::ASTContext &ast_ctx,
-                                          clang::DeclContext *decl_ctx,
-                                          llvm::Type *type, std::string name) {
+static clang::Expr *CreateLiteralExpr(clang::ASTContext &ast_ctx,
+                                      clang::DeclContext *decl_ctx,
+                                      llvm::Constant *constant) {
+  auto type = GetQualType(ast_ctx, constant->getType(), /*constant=*/true);
+
+  clang::Expr *result = nullptr;
+  if (auto integer = llvm::dyn_cast<llvm::ConstantInt>(constant)) {
+    result = clang::IntegerLiteral::Create(ast_ctx, integer->getValue(), type,
+                                           clang::SourceLocation());
+  } else if (auto floating = llvm::dyn_cast<llvm::ConstantFP>(constant)) {
+    result = clang::FloatingLiteral::Create(ast_ctx, floating->getValueAPF(),
+                                            /*isexact=*/true, type,
+                                            clang::SourceLocation());
+  } else if (auto array = llvm::dyn_cast<llvm::ConstantDataArray>(constant)) {
+    CHECK(array->isString()) << "ConstantArray is not a string";
+    result = clang::StringLiteral::Create(
+        ast_ctx, array->getAsString(), clang::StringLiteral::StringKind::Ascii,
+        /*Pascal=*/false, type, clang::SourceLocation());
+  }
+
+  return result;
+}
+
+static clang::VarDecl *CreateVarDecl(clang::ASTContext &ast_ctx,
+                                     clang::DeclContext *decl_ctx,
+                                     llvm::Type *type, std::string name,
+                                     bool constant = false) {
+  // DLOG(INFO) << "CreateVarDecl: " << (constant ? "constant " : "")
+  //            << remill::LLVMThingToString(type);
+
   return clang::VarDecl::Create(
       ast_ctx, decl_ctx, clang::SourceLocation(), clang::SourceLocation(),
-      &ast_ctx.Idents.get(name), GetClangQualType(ast_ctx, type), nullptr,
+      &ast_ctx.Idents.get(name), GetQualType(ast_ctx, type, constant), nullptr,
       clang::SC_None);
 }
 
@@ -110,16 +164,21 @@ void ASTGenerator::VisitGlobalVar(llvm::GlobalVariable &gvar) {
   DLOG(INFO) << "VisitGlobalVar: " << remill::LLVMThingToString(&gvar);
   auto &ast_ctx = cc_ins->getASTContext();
   auto decl_ctx = ast_ctx.getTranslationUnitDecl();
-  
-  auto var = CreateClangVarDecl(ast_ctx, decl_ctx, gvar.getType(),
-                                gvar.getName().str());
-  
+  auto type = llvm::cast<llvm::PointerType>(gvar.getType())->getElementType();
+
+  auto var = CreateVarDecl(ast_ctx, decl_ctx, type, gvar.getName().str(),
+                           /*constant=*/true);
+
+  if (gvar.hasInitializer()) {
+    var->setInit(CreateLiteralExpr(ast_ctx, decl_ctx, gvar.getInitializer()));
+  }
+
   decl_ctx->addDecl(var);
   decls[&gvar] = var;
 }
 
 void ASTGenerator::VisitFunctionDecl(llvm::Function &func) {
-  DLOG(INFO) << "VisitFunctionDecl: " << remill::LLVMThingToString(&func);
+  DLOG(INFO) << "VisitFunctionDecl: " << func.getName().str();
   auto &ast_ctx = cc_ins->getASTContext();
   auto decl_ctx = ast_ctx.getTranslationUnitDecl();
   auto name = func.getName().str();
@@ -127,8 +186,7 @@ void ASTGenerator::VisitFunctionDecl(llvm::Function &func) {
   auto cfunc = clang::FunctionDecl::Create(
       ast_ctx, decl_ctx, clang::SourceLocation(), clang::SourceLocation(),
       clang::DeclarationName(&ast_ctx.Idents.get(name)),
-      GetClangQualType(ast_ctx, func.getType()), nullptr, clang::SC_None,
-      false);
+      GetQualType(ast_ctx, func.getType()), nullptr, clang::SC_None, false);
 
   decl_ctx->addDecl(cfunc);
   decls[&func] = cfunc;
@@ -154,8 +212,8 @@ void ASTGenerator::visitAllocaInst(llvm::AllocaInst &inst) {
     inst.setName(name.str());
   }
   // Declare a variable
-  auto var = CreateClangVarDecl(ast_ctx, decl_ctx, inst.getAllocatedType(),
-                                name.str());
+  auto var =
+      CreateVarDecl(ast_ctx, decl_ctx, inst.getAllocatedType(), name.str());
   // Add it to the current DeclContext
   decl_ctx->addDecl(var);
   // Add mapping
@@ -176,7 +234,6 @@ void ASTGenerator::visitLoadInst(llvm::LoadInst &inst) {
           ast_ctx, var->getQualifierLoc(), clang::SourceLocation(), var, false,
           var->getLocation(), var->getType(), clang::VK_LValue);
       stmts[&inst] = ref;
-      ref->dump();
     }
   } else if (llvm::isa<llvm::GetElementPtrInst>(ptr)) {
     DLOG(INFO) << "Loading from an aggregate";
@@ -245,7 +302,7 @@ bool GenerateAST::runOnModule(llvm::Module &module) {
   for (auto &var : module.globals()) {
     ast_gen->VisitGlobalVar(var);
   }
-  
+
   using CFGEdge = std::pair<const llvm::BasicBlock *, const llvm::BasicBlock *>;
 
   for (auto &func : module.functions()) {
@@ -281,7 +338,7 @@ bool GenerateAST::runOnModule(llvm::Module &module) {
   }
 
   // ins.getASTContext().getTranslationUnitDecl()->dump();
-  // ins.getASTContext().getTranslationUnitDecl()->print(llvm::outs());
+  ins.getASTContext().getTranslationUnitDecl()->print(llvm::outs());
 
   return true;
 }
