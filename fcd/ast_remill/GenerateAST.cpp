@@ -25,7 +25,6 @@
 #include <clang/Basic/TargetInfo.h>
 #include "clang/Lex/Preprocessor.h"
 
-#include <sstream>
 #include <unordered_set>
 #include <vector>
 
@@ -99,8 +98,9 @@ static clang::QualType GetQualType(clang::ASTContext &ctx, llvm::Type *type,
       for (auto param : func->params()) {
         params.push_back(GetQualType(ctx, param, constant));
       }
-      result = ctx.getFunctionType(ret, params,
-                                   clang::FunctionProtoType::ExtProtoInfo());
+      auto epi = clang::FunctionProtoType::ExtProtoInfo();
+      epi.Variadic = func->isVarArg();
+      result = ctx.getFunctionType(ret, params, epi);
     } break;
 
     case llvm::Type::PointerTyID: {
@@ -194,11 +194,33 @@ void ASTGenerator::VisitFunctionDecl(llvm::Function &func) {
   if (!decl) {
     DLOG(INFO) << "Creating FunctionDecl for " << name;
     auto decl_ctx = ast_ctx.getTranslationUnitDecl();
+    auto type = llvm::cast<llvm::PointerType>(func.getType())->getElementType();
 
     decl = clang::FunctionDecl::Create(
         ast_ctx, decl_ctx, clang::SourceLocation(), clang::SourceLocation(),
         clang::DeclarationName(CreateIdentifier(ast_ctx, name)),
-        GetQualType(ast_ctx, func.getType()), nullptr, clang::SC_None, false);
+        GetQualType(ast_ctx, type), nullptr, clang::SC_None, false);
+
+    if (!func.arg_empty()) {
+      auto func_ctx = llvm::cast<clang::FunctionDecl>(decl);
+      std::vector<clang::ParmVarDecl *> params;
+      for (auto &arg : func.args()) {
+        auto arg_name = arg.hasName() ? arg.getName().str()
+                                      : "arg" + std::to_string(arg.getArgNo());
+
+        DLOG(INFO) << "Creating ParmVarDecl for " << arg_name;
+
+        auto param = clang::ParmVarDecl::Create(
+            ast_ctx, func_ctx, clang::SourceLocation(), clang::SourceLocation(),
+            CreateIdentifier(ast_ctx, arg_name),
+            GetQualType(ast_ctx, arg.getType()), nullptr, clang::SC_None,
+            nullptr);
+        decls[&arg] = param;
+        params.push_back(param);
+      }
+
+      func_ctx->setParams(params);
+    }
 
     decl_ctx->addDecl(decl);
   }
@@ -255,16 +277,13 @@ void ASTGenerator::visitAllocaInst(llvm::AllocaInst &inst) {
         decls[inst.getParent()->getParent()]);
     CHECK(decl_ctx != nullptr) << "Undeclared function";
     // Make a name
-    std::stringstream name;
-    if (inst.hasName()) {
-      name << inst.getName().str();
-    } else {
-      name << "var"
-           << std::distance(decl_ctx->decls_begin(), decl_ctx->decls_end());
-      inst.setName(name.str());
-    }
+    auto name =
+        inst.hasName()
+            ? inst.getName().str()
+            : "var" + std::to_string(std::distance(decl_ctx->decls_begin(),
+                                                   decl_ctx->decls_end()));
     // Declare a variable
-    var = CreateVarDecl(ast_ctx, decl_ctx, inst.getAllocatedType(), name.str());
+    var = CreateVarDecl(ast_ctx, decl_ctx, inst.getAllocatedType(), name);
     // Add it to the current DeclContext
     decl_ctx->addDecl(var);
   }
@@ -272,20 +291,23 @@ void ASTGenerator::visitAllocaInst(llvm::AllocaInst &inst) {
 
 void ASTGenerator::visitLoadInst(llvm::LoadInst &inst) {
   DLOG(INFO) << "visitLoadInst: " << remill::LLVMThingToString(&inst);
-  auto decl_ctx =
-      llvm::dyn_cast<clang::FunctionDecl>(decls[inst.getParent()->getParent()]);
-  CHECK(decl_ctx != nullptr) << "Undeclared function";
-  auto ptr = inst.getPointerOperand();
-  if (llvm::isa<llvm::AllocaInst>(ptr) || llvm::isa<llvm::GlobalObject>(ptr)) {
-    DLOG(INFO) << "Loading from a variable";
-    if (auto var = llvm::dyn_cast<clang::VarDecl>(decls[ptr])) {
-      auto ref = clang::DeclRefExpr::Create(
-          ast_ctx, var->getQualifierLoc(), clang::SourceLocation(), var, false,
-          var->getLocation(), var->getType(), clang::VK_LValue);
-      stmts[&inst] = ref;
+  auto &ref = stmts[&inst];
+  if (!ref) {
+    auto decl_ctx = llvm::dyn_cast<clang::FunctionDecl>(
+        decls[inst.getParent()->getParent()]);
+    CHECK(decl_ctx != nullptr) << "Undeclared function";
+    auto ptr = inst.getPointerOperand();
+    if (llvm::isa<llvm::AllocaInst>(ptr) ||
+        llvm::isa<llvm::GlobalObject>(ptr)) {
+      DLOG(INFO) << "Loading from a variable";
+      if (auto var = llvm::dyn_cast<clang::VarDecl>(decls[ptr])) {
+        ref = clang::DeclRefExpr::Create(
+            ast_ctx, var->getQualifierLoc(), clang::SourceLocation(), var,
+            false, var->getLocation(), var->getType(), clang::VK_LValue);
+      }
+    } else if (llvm::isa<llvm::GetElementPtrInst>(ptr)) {
+      DLOG(INFO) << "Loading from an aggregate";
     }
-  } else if (llvm::isa<llvm::GetElementPtrInst>(ptr)) {
-    DLOG(INFO) << "Loading from an aggregate";
   }
 }
 
@@ -380,7 +402,7 @@ bool GenerateAST::runOnModule(llvm::Module &module) {
     }
   }
 
-  // ins.getASTContext().getTranslationUnitDecl()->dump();
+  ins.getASTContext().getTranslationUnitDecl()->dump();
   ins.getASTContext().getTranslationUnitDecl()->print(llvm::outs());
 
   return true;
