@@ -33,6 +33,7 @@ namespace fcd {
 class ASTGenerator : public llvm::InstVisitor<ASTGenerator> {
  private:
   clang::CompilerInstance *cc_ins;
+  clang::ASTContext &ast_ctx;
 
   std::unordered_map<llvm::Value *, clang::Decl *> decls;
   std::unordered_map<llvm::Value *, clang::Stmt *> stmts;
@@ -42,6 +43,8 @@ class ASTGenerator : public llvm::InstVisitor<ASTGenerator> {
 
   void VisitGlobalVar(llvm::GlobalVariable &var);
   void VisitFunctionDecl(llvm::Function &func);
+  void VisitFunctionDefn(llvm::Function &func);
+  void VisitBasicBlock(llvm::BasicBlock &block);
   
   void visitCallInst(llvm::CallInst &inst);
   void visitAllocaInst(llvm::AllocaInst &inst);

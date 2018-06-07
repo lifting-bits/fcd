@@ -37,6 +37,15 @@ namespace fcd {
 
 namespace {
 
+static clang::IdentifierInfo *CreateIdentifier(clang::ASTContext &ctx,
+                                               std::string name) {
+  std::string str = "";
+  for (auto chr : name) {
+    str.push_back(std::isalnum(chr) ? chr : '_');
+  }
+  return &ctx.Idents.get(str);
+}
+
 static clang::QualType GetQualType(clang::ASTContext &ctx, llvm::Type *type,
                                    bool constant = false) {
   // DLOG(INFO) << "GetQualType: " << (constant ? "constant " : "")
@@ -147,49 +156,91 @@ static clang::VarDecl *CreateVarDecl(clang::ASTContext &ast_ctx,
                                      clang::DeclContext *decl_ctx,
                                      llvm::Type *type, std::string name,
                                      bool constant = false) {
-  // DLOG(INFO) << "CreateVarDecl: " << (constant ? "constant " : "")
-  //            << remill::LLVMThingToString(type);
-
+  DLOG(INFO) << "Creating VarDecl for " << name;
   return clang::VarDecl::Create(
       ast_ctx, decl_ctx, clang::SourceLocation(), clang::SourceLocation(),
-      &ast_ctx.Idents.get(name), GetQualType(ast_ctx, type, constant), nullptr,
-      clang::SC_None);
+      CreateIdentifier(ast_ctx, name), GetQualType(ast_ctx, type, constant),
+      nullptr, clang::SC_None);
 }
 
 }  // namespace
 
-ASTGenerator::ASTGenerator(clang::CompilerInstance &ins) : cc_ins(&ins) {}
+ASTGenerator::ASTGenerator(clang::CompilerInstance &ins)
+    : cc_ins(&ins), ast_ctx(cc_ins->getASTContext()) {}
 
 void ASTGenerator::VisitGlobalVar(llvm::GlobalVariable &gvar) {
   DLOG(INFO) << "VisitGlobalVar: " << remill::LLVMThingToString(&gvar);
-  auto &ast_ctx = cc_ins->getASTContext();
-  auto decl_ctx = ast_ctx.getTranslationUnitDecl();
-  auto type = llvm::cast<llvm::PointerType>(gvar.getType())->getElementType();
+  auto &var = decls[&gvar];
+  if (!var) {
+    auto name = gvar.getName().str();
+    auto decl_ctx = ast_ctx.getTranslationUnitDecl();
+    auto type = llvm::cast<llvm::PointerType>(gvar.getType())->getElementType();
 
-  auto var = CreateVarDecl(ast_ctx, decl_ctx, type, gvar.getName().str(),
-                           /*constant=*/true);
+    var = CreateVarDecl(ast_ctx, decl_ctx, type, name, /*constant=*/true);
 
-  if (gvar.hasInitializer()) {
-    var->setInit(CreateLiteralExpr(ast_ctx, decl_ctx, gvar.getInitializer()));
+    if (gvar.hasInitializer()) {
+      auto tmp = llvm::cast<clang::VarDecl>(var);
+      tmp->setInit(CreateLiteralExpr(ast_ctx, decl_ctx, gvar.getInitializer()));
+    }
+
+    decl_ctx->addDecl(var);
   }
-
-  decl_ctx->addDecl(var);
-  decls[&gvar] = var;
 }
 
 void ASTGenerator::VisitFunctionDecl(llvm::Function &func) {
-  DLOG(INFO) << "VisitFunctionDecl: " << func.getName().str();
-  auto &ast_ctx = cc_ins->getASTContext();
-  auto decl_ctx = ast_ctx.getTranslationUnitDecl();
   auto name = func.getName().str();
+  DLOG(INFO) << "VisitFunctionDecl: " << name;
+  auto &decl = decls[&func];
+  if (!decl) {
+    DLOG(INFO) << "Creating FunctionDecl for " << name;
+    auto decl_ctx = ast_ctx.getTranslationUnitDecl();
 
-  auto cfunc = clang::FunctionDecl::Create(
-      ast_ctx, decl_ctx, clang::SourceLocation(), clang::SourceLocation(),
-      clang::DeclarationName(&ast_ctx.Idents.get(name)),
-      GetQualType(ast_ctx, func.getType()), nullptr, clang::SC_None, false);
+    decl = clang::FunctionDecl::Create(
+        ast_ctx, decl_ctx, clang::SourceLocation(), clang::SourceLocation(),
+        clang::DeclarationName(CreateIdentifier(ast_ctx, name)),
+        GetQualType(ast_ctx, func.getType()), nullptr, clang::SC_None, false);
 
-  decl_ctx->addDecl(cfunc);
-  decls[&func] = cfunc;
+    decl_ctx->addDecl(decl);
+  }
+}
+
+void ASTGenerator::VisitFunctionDefn(llvm::Function &func) {
+  auto name = func.getName().str();
+  DLOG(INFO) << "VisitFunctionDefn: " << name;
+  auto &compound = stmts[&func];
+  if (!compound) {
+    std::vector<clang::Stmt *> compounds;
+    for (auto &block : func) {
+      auto stmt = stmts[&block];
+      CHECK(stmt) << "CompoundStmt for block doesn't exist";
+      compounds.push_back(stmt);
+    }
+
+    compound = new (ast_ctx) clang::CompoundStmt(
+        ast_ctx, compounds, clang::SourceLocation(), clang::SourceLocation());
+
+    if (auto decl = llvm::dyn_cast<clang::FunctionDecl>(decls[&func])) {
+      decl->setBody(compound);
+    } else {
+      LOG(FATAL) << "FunctionDecl for function doesn't exist";
+    }
+  }
+}
+
+void ASTGenerator::VisitBasicBlock(llvm::BasicBlock &block) {
+  auto name = block.hasName() ? block.getName().str() : "<no_name>";
+  DLOG(INFO) << "VisitBasicBlock: " << name;
+  auto &compound = stmts[&block];
+  if (!compound) {
+    DLOG(INFO) << "Creating CompoundStmt for " << name;
+    visit(block);
+    std::vector<clang::Stmt *> block_stmts;
+    for (auto &inst : block) {
+      block_stmts.push_back(stmts[&inst]);
+    }
+    compound = new (ast_ctx) clang::CompoundStmt(
+        ast_ctx, block_stmts, clang::SourceLocation(), clang::SourceLocation());
+  }
 }
 
 void ASTGenerator::visitCallInst(llvm::CallInst &inst) {
@@ -198,31 +249,29 @@ void ASTGenerator::visitCallInst(llvm::CallInst &inst) {
 
 void ASTGenerator::visitAllocaInst(llvm::AllocaInst &inst) {
   DLOG(INFO) << "visitAllocaInst: " << remill::LLVMThingToString(&inst);
-  auto &ast_ctx = cc_ins->getASTContext();
-  auto decl_ctx =
-      llvm::dyn_cast<clang::FunctionDecl>(decls[inst.getParent()->getParent()]);
-  CHECK(decl_ctx != nullptr) << "Undeclared function";
-  // Make a name
-  std::stringstream name;
-  if (inst.hasName()) {
-    name << inst.getName().str();
-  } else {
-    name << "var"
-         << std::distance(decl_ctx->decls_begin(), decl_ctx->decls_end());
-    inst.setName(name.str());
+  auto &var = decls[&inst];
+  if (!var) {
+    auto decl_ctx = llvm::dyn_cast<clang::FunctionDecl>(
+        decls[inst.getParent()->getParent()]);
+    CHECK(decl_ctx != nullptr) << "Undeclared function";
+    // Make a name
+    std::stringstream name;
+    if (inst.hasName()) {
+      name << inst.getName().str();
+    } else {
+      name << "var"
+           << std::distance(decl_ctx->decls_begin(), decl_ctx->decls_end());
+      inst.setName(name.str());
+    }
+    // Declare a variable
+    var = CreateVarDecl(ast_ctx, decl_ctx, inst.getAllocatedType(), name.str());
+    // Add it to the current DeclContext
+    decl_ctx->addDecl(var);
   }
-  // Declare a variable
-  auto var =
-      CreateVarDecl(ast_ctx, decl_ctx, inst.getAllocatedType(), name.str());
-  // Add it to the current DeclContext
-  decl_ctx->addDecl(var);
-  // Add mapping
-  decls[&inst] = var;
 }
 
 void ASTGenerator::visitLoadInst(llvm::LoadInst &inst) {
   DLOG(INFO) << "visitLoadInst: " << remill::LLVMThingToString(&inst);
-  auto &ast_ctx = cc_ins->getASTContext();
   auto decl_ctx =
       llvm::dyn_cast<clang::FunctionDecl>(decls[inst.getParent()->getParent()]);
   CHECK(decl_ctx != nullptr) << "Undeclared function";
@@ -254,12 +303,6 @@ static void CFGSlice(
     llvm::BasicBlock *source, llvm::BasicBlock *sink,
     std::unordered_map<llvm::BasicBlock *, llvm::BasicBlock *> &result) {}
 }  // namespace
-
-void GenerateAST::GetOrCreateAST(llvm::BasicBlock *block) {
-  auto name = block->hasName() ? block->getName().str() : "<no_name>";
-  DLOG(INFO) << "Generating AST for block " << name;
-  ast_gen->visit(block);
-}
 
 void GenerateAST::StructureAcyclicRegion(llvm::Region *region) {
   DLOG(INFO) << "Structuring acyclic region " << region->getNameStr();
@@ -308,7 +351,6 @@ bool GenerateAST::runOnModule(llvm::Module &module) {
   for (auto &func : module.functions()) {
     ast_gen->VisitFunctionDecl(func);
     if (!func.isDeclaration()) {
-      DLOG(INFO) << "Generating AST for function " << func.getName().str();
       // Compute back edges using a DFS walk of the CFG
       llvm::SmallVector<CFGEdge, 10> back_edges;
       llvm::FindFunctionBackedges(func, back_edges);
@@ -322,7 +364,7 @@ bool GenerateAST::runOnModule(llvm::Module &module) {
       auto po_walk =
           llvm::make_range(llvm::po_begin(&func), llvm::po_end(&func));
       for (auto block : po_walk) {
-        GetOrCreateAST(block);
+        ast_gen->VisitBasicBlock(*block);
         // Check if `block` is the head of a region
         auto region = regions->getRegionFor(block);
         if (block == region->getEntry()) {
@@ -334,6 +376,7 @@ bool GenerateAST::runOnModule(llvm::Module &module) {
           }
         }
       }
+      ast_gen->VisitFunctionDefn(func);
     }
   }
 
