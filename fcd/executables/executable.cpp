@@ -17,6 +17,7 @@
 #include "remill/BC/Version.h"
 
 #include <ctype.h>
+#include <gflags/gflags.h>
 
 using namespace llvm;
 using namespace std;
@@ -92,109 +93,34 @@ namespace
 	ElfExecutableFactory elfFactory;
 	FlatBinaryExecutableFactory flatBinaryFactory;
 	PythonExecutableFactory pythonScriptExecutableFactory;
+    ExecutableFactory* const factories[] = {
+        &autoFactory,
+        &elfFactory,
+        &flatBinaryFactory,
+        &pythonScriptExecutableFactory,
+    };
+    
+    ExecutableFactory* getFactory(llvm::StringRef formatStr) {
+        if (formatStr.endswith(".py")) {
+            // Yikes! Mutable global state
+            pythonScriptExecutableFactory.setScriptPath(formatStr);
+            return &pythonScriptExecutableFactory;
+        }
+        for (auto f: factories) {
+            if (formatStr == f->getParameterValue()) {
+                return f;
+            }
+        }
+        return nullptr;
+    }
+    
+    bool validateFormat(char const *, std::string const & formatStr) {
+        return getFactory(formatStr) != nullptr;
+    }
 
-#if LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 7)
-	class ExecutableFactoryParser : public cl::generic_parser_base
-
-	{
-		struct OptionInfo : public GenericOptionInfo
-		{
-			cl::OptionValue<ExecutableFactory*> factory;
-			
-			OptionInfo(ExecutableFactory* factory)
-			: GenericOptionInfo(factory->getParameterValue().c_str(), factory->getHelp().c_str()), factory(factory)
-			{
-			}
-		};
-		
-		static vector<OptionInfo>& factories()
-		{
-			static vector<OptionInfo> factories = {
-				OptionInfo(&autoFactory),
-				OptionInfo(&elfFactory),
-				OptionInfo(&flatBinaryFactory),
-				OptionInfo(&pythonScriptExecutableFactory)
-			};
-			return factories;
-		}
-		
-	public:
-		typedef ExecutableFactory* parser_data_type;
-		
-		ExecutableFactoryParser(cl::Option& o)
-		: cl::generic_parser_base(o)
-		{
-		}
-		
-		virtual unsigned getNumOptions() const override
-		{
-			return static_cast<unsigned>(factories().size());
-		}
-		
-#if LLVM_VERSION_NUMBER >= LLVM_VERSION(4, 0)
-		virtual StringRef getOption(unsigned n) const override
-		{
-			return factories().at(n).Name;
-		}
-		
-		virtual StringRef getDescription(unsigned n) const override
-		{
-			return factories().at(n).HelpStr;
-		}
-#else	
-		virtual const char *getOption(unsigned n) const override
-		{
-			return factories().at(n).Name;
-		}
-		
-		virtual const char *getDescription(unsigned n) const override
-		{
-			return factories().at(n).HelpStr;
-		}
-#endif	
-		virtual const cl::GenericOptionValue& getOptionValue(unsigned n) const override
-		{
-			return factories().at(n).factory;
-		}
-		
-		bool parse(cl::Option& o, StringRef argName, StringRef arg, ExecutableFactory*& value)
-		{
-			StringRef argVal = Owner.hasArgStr() ? arg : argName;
-			ci_string ciArgVal(argVal.begin(), argVal.end());
-			for (const auto& info : factories())
-			{
-				if (ciArgVal.c_str() == info.Name)
-				{
-					value = info.factory.getValue();
-					return false;
-				}
-			}
-			
-			if (ciArgVal.length() > 3 && ciArgVal.compare(ciArgVal.length() - 3, 3, ".py") == 0)
-			{
-				pythonScriptExecutableFactory.setScriptPath(argVal);
-				value = &pythonScriptExecutableFactory;
-				return false;
-			}
-			
-			return o.error("Cannot find option named '" + argVal + "'!");
-		}
-	};
-	
-	cl::opt<ExecutableFactory*, false, ExecutableFactoryParser> executableFactory(
-		"format", cl::value_desc("format"),
-		cl::desc("Executable format"),
-		cl::init(&autoFactory),
-		whitelist()
-	);
-	
-	cl::alias formatA("f", cl::desc("Alias for --format"), cl::aliasopt(executableFactory), whitelist());
-#else
-	ExecutableFactory* executableFactory = &autoFactory;
-#endif // LLVM_VERSION_NUMBER >= LLVM_VERSION(3, 7)
+    DEFINE_string(format, "auto", "Executable format");
+    DEFINE_validator(format, &validateFormat);
 }
-
-
 
 string Executable::getTargetTriple() const
 {
@@ -275,5 +201,5 @@ const StubInfo* Executable::getStubTarget(uint64_t address) const
 
 ErrorOr<unique_ptr<Executable>> Executable::parse(const uint8_t* begin, const uint8_t* end)
 {
-	return executableFactory->parse(begin, end);
+	return getFactory(FLAGS_format)->parse(begin, end);
 }
