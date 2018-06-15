@@ -174,11 +174,13 @@ static clang::DeclRefExpr *CreateDeclRefExpr(clang::ASTContext &ast_ctx,
       false, val->getLocation(), val->getType(), clang::VK_LValue);
 }
 
-// static clang::BinaryOperator *CreateBinaryOperator(clang::ASTContext &ast_ctx,
+// static clang::BinaryOperator *CreateBinaryOperator(clang::ASTContext
+// &ast_ctx,
 //                                                    clang::Opcode opc,
 //                                                    llvm::Value *lhs,
 //                                                    llvm::Value *rhs,
-//                                                    clang::QualType *res_type) {
+//                                                    clang::QualType *res_type)
+//                                                    {
 //   return nullptr;
 // }
 
@@ -254,7 +256,7 @@ void ASTGenerator::VisitFunctionDefn(llvm::Function &func) {
     std::vector<clang::Stmt *> compounds;
     for (auto &block : func) {
       auto stmt = stmts[&block];
-      CHECK(stmt) << "CompoundStmt for block doesn't exist";
+      CHECK(stmt) << "CompoundStmt for block does not exist";
       compounds.push_back(stmt);
     }
 
@@ -264,7 +266,7 @@ void ASTGenerator::VisitFunctionDefn(llvm::Function &func) {
     if (auto decl = llvm::dyn_cast<clang::FunctionDecl>(decls[&func])) {
       decl->setBody(compound);
     } else {
-      LOG(FATAL) << "FunctionDecl for function doesn't exist";
+      LOG(FATAL) << "FunctionDecl for function does not exist";
     }
   }
 }
@@ -287,6 +289,34 @@ void ASTGenerator::VisitBasicBlock(llvm::BasicBlock &block) {
 
 void ASTGenerator::visitCallInst(llvm::CallInst &inst) {
   DLOG(INFO) << "visitCallInst: " << remill::LLVMThingToString(&inst);
+  auto callexpr = stmts[&inst];
+  if (!callexpr) {
+    auto callee = inst.getCalledValue();
+    if (auto func = llvm::dyn_cast<llvm::Function>(callee)) {
+      auto decl = decls[func];
+      CHECK(decl) << "FunctionDecl for callee does not exist";
+      auto fdecl = llvm::cast<clang::FunctionDecl>(decl);
+      auto fcast = clang::ImplicitCastExpr::Create(
+          ast_ctx, ast_ctx.getPointerType(fdecl->getType()),
+          clang::CK_FunctionToPointerDecay, CreateDeclRefExpr(ast_ctx, fdecl),
+          nullptr, clang::VK_RValue);
+      std::vector<clang::Expr *> args;
+      // for (auto &arg : inst.arg_operands()) {
+      //   auto stmt = stmts[arg.get()];
+      //   CHECK(stmt) << "Stmt for call operand does not exist";
+      //   auto arg_expr = llvm::cast<clang::Expr>(stmt);
+      //   auto arg_cast = clang::ImplicitCastExpr::Create(
+      //       ast_ctx, arg_expr->getType(), clang::CK_LValueToRValue, arg_expr,
+      //       nullptr, clang::VK_RValue);
+      //   args.push_back(arg_cast);
+      // }
+      callexpr = new (ast_ctx)
+          clang::CallExpr(ast_ctx, fcast, args, fdecl->getReturnType(),
+                          clang::VK_RValue, clang::SourceLocation());
+    } else {
+      LOG(FATAL) << "Callee is not a function";
+    }
+  }
 }
 
 void ASTGenerator::visitAllocaInst(llvm::AllocaInst &inst) {
@@ -448,10 +478,13 @@ bool GenerateAST::runOnModule(llvm::Module &module) {
     ast_gen->VisitGlobalVar(var);
   }
 
+  for (auto &func : module.functions()) {
+    ast_gen->VisitFunctionDecl(func);
+  }
+
   using CFGEdge = std::pair<const llvm::BasicBlock *, const llvm::BasicBlock *>;
 
   for (auto &func : module.functions()) {
-    ast_gen->VisitFunctionDecl(func);
     if (!func.isDeclaration()) {
       // Compute back edges using a DFS walk of the CFG
       llvm::SmallVector<CFGEdge, 10> back_edges;
