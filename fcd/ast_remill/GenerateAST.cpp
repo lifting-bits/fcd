@@ -189,6 +189,45 @@ static clang::DeclRefExpr *CreateDeclRefExpr(clang::ASTContext &ast_ctx,
 ASTGenerator::ASTGenerator(clang::CompilerInstance &ins)
     : cc_ins(&ins), ast_ctx(cc_ins->getASTContext()) {}
 
+clang::Expr *ASTGenerator::GetOperandExpr(clang::DeclContext *decl_ctx,
+                                          llvm::Value *val) {
+  DLOG(INFO) << "Getting Expr for " << remill::LLVMThingToString(val);
+  clang::Expr *result = nullptr;
+
+  if (auto cexpr = llvm::dyn_cast<llvm::ConstantExpr>(val)) {
+    auto inst = cexpr->getAsInstruction();
+    visit(inst);
+    stmts[val] = stmts[inst];
+    stmts.erase(inst);
+  }
+
+  if (auto cdata = llvm::dyn_cast<llvm::ConstantData>(val)) {
+    // Operand is a constant
+    result = CreateLiteralExpr(ast_ctx, decl_ctx, cdata);
+  } else if (decls.count(val)) {
+    // Operand is an l-value (variable, function, ...)
+    auto decl = llvm::cast<clang::ValueDecl>(decls[val]);
+    result = CreateDeclRefExpr(ast_ctx, decl);
+    if (llvm::isa<llvm::GlobalValue>(val)) {
+      // LLVM IR global values are constant pointers; Add a `&`
+      result = new (ast_ctx) clang::UnaryOperator(
+          result, clang::UO_AddrOf, GetQualType(ast_ctx, val->getType()),
+          clang::VK_RValue, clang::OK_Ordinary, clang::SourceLocation());
+    }
+  } else if (stmts.count(val)) {
+    // Operand is a result of an expression
+    result = llvm::cast<clang::Expr>(stmts[val]);
+  } else {
+    LOG(FATAL) << "Invalid operand";
+  }
+
+  if (!result) {
+    LOG(WARNING) << "Operand expression for the given value does not exist";
+  }
+
+  return result;
+}
+
 void ASTGenerator::VisitGlobalVar(llvm::GlobalVariable &gvar) {
   DLOG(INFO) << "VisitGlobalVar: " << remill::LLVMThingToString(&gvar);
   auto &var = decls[&gvar];
@@ -300,22 +339,31 @@ void ASTGenerator::visitCallInst(llvm::CallInst &inst) {
           ast_ctx, ast_ctx.getPointerType(fdecl->getType()),
           clang::CK_FunctionToPointerDecay, CreateDeclRefExpr(ast_ctx, fdecl),
           nullptr, clang::VK_RValue);
+
       std::vector<clang::Expr *> args;
-      // for (auto &arg : inst.arg_operands()) {
-      //   auto stmt = stmts[arg.get()];
-      //   CHECK(stmt) << "Stmt for call operand does not exist";
-      //   auto arg_expr = llvm::cast<clang::Expr>(stmt);
-      //   auto arg_cast = clang::ImplicitCastExpr::Create(
-      //       ast_ctx, arg_expr->getType(), clang::CK_LValueToRValue, arg_expr,
-      //       nullptr, clang::VK_RValue);
-      //   args.push_back(arg_cast);
-      // }
+      for (auto &arg : inst.arg_operands()) {
+        auto arg_expr = GetOperandExpr(fdecl, arg);
+        CHECK(arg_expr) << "Expr for call operand does not exist";
+        auto arg_cast = clang::ImplicitCastExpr::Create(
+            ast_ctx, arg_expr->getType(), clang::CK_LValueToRValue, arg_expr,
+            nullptr, clang::VK_RValue);
+        args.push_back(arg_cast);
+      }
+
       callexpr = new (ast_ctx)
           clang::CallExpr(ast_ctx, fcast, args, fdecl->getReturnType(),
                           clang::VK_RValue, clang::SourceLocation());
     } else {
       LOG(FATAL) << "Callee is not a function";
     }
+  }
+}
+
+void ASTGenerator::visitGetElementPtrInst(llvm::GetElementPtrInst &inst) {
+  DLOG(INFO) << "visitGetElementPtrInst: " << remill::LLVMThingToString(&inst);
+  auto &expr = stmts[&inst];
+  if (!expr) {
+    expr = nullptr;
   }
 }
 
@@ -380,40 +428,12 @@ void ASTGenerator::visitStoreInst(llvm::StoreInst &inst) {
     CHECK(decl_ctx) << "Undeclared function";
     // Get the operand we're assigning to
     auto ptr = inst.getPointerOperand();
-    clang::Expr *lhs = nullptr;
-    if (decls.count(ptr)) {
-      // We're assigning to a variable
-      auto decl = llvm::cast<clang::ValueDecl>(decls[ptr]);
-      lhs = CreateDeclRefExpr(ast_ctx, decl);
-    } else if (stmts.count(ptr)) {
-      // We're assigning to the result of an expression.
-      // Dereference, aggregate access, ...
-      lhs = llvm::dyn_cast<clang::Expr>(stmts[ptr]);
-    } else {
-      LOG(FATAL) << "Invalid assigned to operand";
-    }
+    clang::Expr *lhs = GetOperandExpr(decl_ctx, ptr);
+    CHECK(lhs) << "Invalid assigned to operand";
     // Get the operand we're assigning from
     auto val = inst.getValueOperand();
-    clang::Expr *rhs = nullptr;
-    if (auto cdata = llvm::dyn_cast<llvm::ConstantData>(val)) {
-      // We're assigning constant
-      rhs = CreateLiteralExpr(ast_ctx, decl_ctx, cdata);
-    } else if (decls.count(val)) {
-      // We're assigning an l-value (variable, function, ...)
-      auto decl = llvm::cast<clang::ValueDecl>(decls[val]);
-      rhs = CreateDeclRefExpr(ast_ctx, decl);
-      if (llvm::isa<llvm::GlobalValue>(val)) {
-        // LLVM IR global values are constant pointers; Add a `&`
-        rhs = new (ast_ctx) clang::UnaryOperator(
-            rhs, clang::UO_AddrOf, GetQualType(ast_ctx, val->getType()),
-            clang::VK_RValue, clang::OK_Ordinary, clang::SourceLocation());
-      }
-    } else if (stmts.count(val)) {
-      // We're assigning a result of an expression
-      rhs = llvm::dyn_cast<clang::Expr>(stmts[val]);
-    } else {
-      LOG(FATAL) << "Invalid assigned from operand";
-    }
+    clang::Expr *rhs = GetOperandExpr(decl_ctx, val);
+    CHECK(rhs) << "Invalid assigned from operand";
     // Create the assignemnt itself
     assign = new (ast_ctx) clang::BinaryOperator(
         lhs, rhs, clang::BO_Assign,

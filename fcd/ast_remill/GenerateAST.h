@@ -38,6 +38,8 @@ class ASTGenerator : public llvm::InstVisitor<ASTGenerator> {
   std::unordered_map<llvm::Value *, clang::Decl *> decls;
   std::unordered_map<llvm::Value *, clang::Stmt *> stmts;
 
+  clang::Expr *GetOperandExpr(clang::DeclContext *decl_ctx, llvm::Value *val);
+ 
  public:
   ASTGenerator(clang::CompilerInstance &ins);
 
@@ -47,6 +49,7 @@ class ASTGenerator : public llvm::InstVisitor<ASTGenerator> {
   void VisitBasicBlock(llvm::BasicBlock &block);
   
   void visitCallInst(llvm::CallInst &inst);
+  void visitGetElementPtrInst(llvm::GetElementPtrInst &inst);
   void visitAllocaInst(llvm::AllocaInst &inst);
   void visitLoadInst(llvm::LoadInst &inst);
   void visitStoreInst(llvm::StoreInst &inst);
