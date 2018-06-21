@@ -319,7 +319,9 @@ void ASTGenerator::VisitBasicBlock(llvm::BasicBlock &block) {
     visit(block);
     std::vector<clang::Stmt *> block_stmts;
     for (auto &inst : block) {
-      block_stmts.push_back(stmts[&inst]);
+      if (stmts.count(&inst)) {
+        block_stmts.push_back(stmts[&inst]);
+      }
     }
     compound = new (ast_ctx) clang::CompoundStmt(
         ast_ctx, block_stmts, clang::SourceLocation(), clang::SourceLocation());
@@ -328,7 +330,7 @@ void ASTGenerator::VisitBasicBlock(llvm::BasicBlock &block) {
 
 void ASTGenerator::visitCallInst(llvm::CallInst &inst) {
   DLOG(INFO) << "visitCallInst: " << remill::LLVMThingToString(&inst);
-  auto callexpr = stmts[&inst];
+  auto &callexpr = stmts[&inst];
   if (!callexpr) {
     auto callee = inst.getCalledValue();
     if (auto func = llvm::dyn_cast<llvm::Function>(callee)) {
@@ -363,7 +365,20 @@ void ASTGenerator::visitGetElementPtrInst(llvm::GetElementPtrInst &inst) {
   DLOG(INFO) << "visitGetElementPtrInst: " << remill::LLVMThingToString(&inst);
   auto &expr = stmts[&inst];
   if (!expr) {
-    expr = nullptr;
+    auto src_type = inst.getSourceElementType();
+    if (llvm::isa<llvm::ArrayType>(src_type)) {
+      DLOG(INFO) << "Indexing an array";
+      if (inst.hasAllZeroIndices()) {
+        auto ptr = inst.getPointerOperand();
+        if (auto array = llvm::dyn_cast<clang::VarDecl>(decls[ptr])) {
+          expr = CreateDeclRefExpr(ast_ctx, array);
+        } else {
+          LOG(FATAL) << "Referencing undeclared variable";
+        }
+      }
+    } else if (llvm::isa<llvm::StructType>(src_type)) {
+      DLOG(INFO) << "Indexing a structure";
+    }
   }
 }
 
