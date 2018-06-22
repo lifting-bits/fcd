@@ -174,20 +174,24 @@ static clang::DeclRefExpr *CreateDeclRefExpr(clang::ASTContext &ast_ctx,
       false, val->getLocation(), val->getType(), clang::VK_LValue);
 }
 
-// static clang::BinaryOperator *CreateBinaryOperator(clang::ASTContext
-// &ast_ctx,
-//                                                    clang::Opcode opc,
-//                                                    llvm::Value *lhs,
-//                                                    llvm::Value *rhs,
-//                                                    clang::QualType *res_type)
-//                                                    {
-//   return nullptr;
-// }
+static clang::BinaryOperator *CreateBinaryOperator(
+    clang::ASTContext &ast_ctx, clang::BinaryOperatorKind opc, clang::Expr *lhs,
+    clang::Expr *rhs, clang::QualType res_type) {
+  return new (ast_ctx)
+      clang::BinaryOperator(lhs, rhs, opc, res_type, clang::VK_RValue,
+                            clang::OK_Ordinary, clang::SourceLocation(),
+                            /*fpContractable=*/false);
+}
 
 }  // namespace
 
 ASTGenerator::ASTGenerator(clang::CompilerInstance &ins)
     : cc_ins(&ins), ast_ctx(cc_ins->getASTContext()) {}
+
+clang::FunctionDecl *ASTGenerator::GetFunctionDecl(llvm::Instruction *inst) {
+  return llvm::dyn_cast<clang::FunctionDecl>(
+      decls[inst->getParent()->getParent()]);
+}
 
 clang::Expr *ASTGenerator::GetOperandExpr(clang::DeclContext *decl_ctx,
                                           llvm::Value *val) {
@@ -233,17 +237,17 @@ void ASTGenerator::VisitGlobalVar(llvm::GlobalVariable &gvar) {
   auto &var = decls[&gvar];
   if (!var) {
     auto name = gvar.getName().str();
-    auto decl_ctx = ast_ctx.getTranslationUnitDecl();
+    auto tudecl = ast_ctx.getTranslationUnitDecl();
     auto type = llvm::cast<llvm::PointerType>(gvar.getType())->getElementType();
 
-    var = CreateVarDecl(ast_ctx, decl_ctx, type, name, /*constant=*/true);
+    var = CreateVarDecl(ast_ctx, tudecl, type, name, /*constant=*/true);
 
     if (gvar.hasInitializer()) {
       auto tmp = llvm::cast<clang::VarDecl>(var);
-      tmp->setInit(CreateLiteralExpr(ast_ctx, decl_ctx, gvar.getInitializer()));
+      tmp->setInit(CreateLiteralExpr(ast_ctx, tudecl, gvar.getInitializer()));
     }
 
-    decl_ctx->addDecl(var);
+    tudecl->addDecl(var);
   }
 }
 
@@ -253,11 +257,11 @@ void ASTGenerator::VisitFunctionDecl(llvm::Function &func) {
   auto &decl = decls[&func];
   if (!decl) {
     DLOG(INFO) << "Creating FunctionDecl for " << name;
-    auto decl_ctx = ast_ctx.getTranslationUnitDecl();
+    auto tudecl = ast_ctx.getTranslationUnitDecl();
     auto type = llvm::cast<llvm::PointerType>(func.getType())->getElementType();
 
     decl = clang::FunctionDecl::Create(
-        ast_ctx, decl_ctx, clang::SourceLocation(), clang::SourceLocation(),
+        ast_ctx, tudecl, clang::SourceLocation(), clang::SourceLocation(),
         clang::DeclarationName(CreateIdentifier(ast_ctx, name)),
         GetQualType(ast_ctx, type), nullptr, clang::SC_None, false);
 
@@ -283,7 +287,7 @@ void ASTGenerator::VisitFunctionDecl(llvm::Function &func) {
       func_ctx->setParams(params);
     }
 
-    decl_ctx->addDecl(decl);
+    tudecl->addDecl(decl);
   }
 }
 
@@ -388,19 +392,17 @@ void ASTGenerator::visitAllocaInst(llvm::AllocaInst &inst) {
   if (!declstmt) {
     auto &var = decls[&inst];
     if (!var) {
-      auto decl_ctx = llvm::dyn_cast<clang::FunctionDecl>(
-          decls[inst.getParent()->getParent()]);
+      auto fdecl = GetFunctionDecl(&inst);
 
-      CHECK(decl_ctx != nullptr) << "Undeclared function";
+      CHECK(fdecl) << "Undeclared function";
 
-      auto name =
-          inst.hasName()
-              ? inst.getName().str()
-              : "var" + std::to_string(std::distance(decl_ctx->decls_begin(),
-                                                     decl_ctx->decls_end()));
+      auto name = inst.hasName()
+                      ? inst.getName().str()
+                      : "var" + std::to_string(std::distance(
+                                    fdecl->decls_begin(), fdecl->decls_end()));
 
-      var = CreateVarDecl(ast_ctx, decl_ctx, inst.getAllocatedType(), name);
-      decl_ctx->addDecl(var);
+      var = CreateVarDecl(ast_ctx, fdecl, inst.getAllocatedType(), name);
+      fdecl->addDecl(var);
     }
 
     declstmt = new (ast_ctx)
@@ -409,13 +411,38 @@ void ASTGenerator::visitAllocaInst(llvm::AllocaInst &inst) {
   }
 }
 
+void ASTGenerator::visitStoreInst(llvm::StoreInst &inst) {
+  DLOG(INFO) << "visitStoreInst: " << remill::LLVMThingToString(&inst);
+  auto &assign = stmts[&inst];
+  if (!assign) {
+    // Stores in LLVM IR correspond to value assignments in C
+    auto fdecl = GetFunctionDecl(&inst);
+    CHECK(fdecl) << "Undeclared function";
+    // Get the operand we're assigning to
+    auto ptr = inst.getPointerOperand();
+    clang::Expr *lhs = GetOperandExpr(fdecl, ptr);
+    CHECK(lhs) << "Invalid assigned to operand";
+    // Get the operand we're assigning from
+    auto val = inst.getValueOperand();
+    clang::Expr *rhs = GetOperandExpr(fdecl, val);
+    CHECK(rhs) << "Invalid assigned from operand";
+    // Create the assignemnt itself
+    assign = new (ast_ctx) clang::BinaryOperator(
+        lhs, rhs, clang::BO_Assign,
+        GetQualType(
+            ast_ctx,
+            llvm::cast<llvm::PointerType>(ptr->getType())->getElementType()),
+        clang::VK_RValue, clang::OK_Ordinary, clang::SourceLocation(),
+        /*fpContractable=*/false);
+  }
+}
+
 void ASTGenerator::visitLoadInst(llvm::LoadInst &inst) {
   DLOG(INFO) << "visitLoadInst: " << remill::LLVMThingToString(&inst);
   auto &ref = stmts[&inst];
   if (!ref) {
-    auto decl_ctx = llvm::dyn_cast<clang::FunctionDecl>(
-        decls[inst.getParent()->getParent()]);
-    CHECK(decl_ctx) << "Undeclared function";
+    auto fdecl = GetFunctionDecl(&inst);
+    CHECK(fdecl) << "Undeclared function";
     auto ptr = inst.getPointerOperand();
     if (llvm::isa<llvm::AllocaInst>(ptr) ||
         llvm::isa<llvm::GlobalVariable>(ptr)) {
@@ -433,30 +460,71 @@ void ASTGenerator::visitLoadInst(llvm::LoadInst &inst) {
   }
 }
 
-void ASTGenerator::visitStoreInst(llvm::StoreInst &inst) {
-  DLOG(INFO) << "visitStoreInst: " << remill::LLVMThingToString(&inst);
-  auto &assign = stmts[&inst];
-  if (!assign) {
-    // Stores in LLVM IR correspond to value assignments in C
-    auto decl_ctx = llvm::dyn_cast<clang::FunctionDecl>(
-        decls[inst.getParent()->getParent()]);
-    CHECK(decl_ctx) << "Undeclared function";
-    // Get the operand we're assigning to
-    auto ptr = inst.getPointerOperand();
-    clang::Expr *lhs = GetOperandExpr(decl_ctx, ptr);
-    CHECK(lhs) << "Invalid assigned to operand";
-    // Get the operand we're assigning from
-    auto val = inst.getValueOperand();
-    clang::Expr *rhs = GetOperandExpr(decl_ctx, val);
-    CHECK(rhs) << "Invalid assigned from operand";
-    // Create the assignemnt itself
-    assign = new (ast_ctx) clang::BinaryOperator(
-        lhs, rhs, clang::BO_Assign,
-        GetQualType(
-            ast_ctx,
-            llvm::cast<llvm::PointerType>(ptr->getType())->getElementType()),
-        clang::VK_RValue, clang::OK_Ordinary, clang::SourceLocation(),
-        /*fpContractable=*/false);
+void ASTGenerator::visitReturnInst(llvm::ReturnInst &inst) {
+  DLOG(INFO) << "visitReturnInst: " << remill::LLVMThingToString(&inst);
+  auto &retstmt = stmts[&inst];
+  if (!retstmt) {
+    if (auto retval = inst.getReturnValue()) {
+      auto fdecl = GetFunctionDecl(&inst);
+      auto retexpr = GetOperandExpr(fdecl, retval);
+      retstmt = new (ast_ctx)
+          clang::ReturnStmt(clang::SourceLocation(), retexpr, nullptr);
+    } else {
+      retstmt = new (ast_ctx) clang::ReturnStmt(clang::SourceLocation());
+    }
+  }
+}
+
+void ASTGenerator::visitBinaryOperator(llvm::BinaryOperator &inst) {
+  DLOG(INFO) << "visitBinaryOperator: " << remill::LLVMThingToString(&inst);
+  auto &binop = stmts[&inst];
+  if (!binop) {
+    // Get declaration context
+    auto fdecl = GetFunctionDecl(&inst);
+    // Get operands
+    auto lhs = GetOperandExpr(fdecl, inst.getOperand(0));
+    auto rhs = GetOperandExpr(fdecl, inst.getOperand(1));
+    // Convenience wrapper
+    auto BinOpExpr = [this, &lhs, &rhs](clang::BinaryOperatorKind opc,
+                                        clang::QualType res_type) {
+      return CreateBinaryOperator(ast_ctx, opc, lhs, rhs, res_type);
+    };
+    // Where the magic happens
+    switch (inst.getOpcode()) {
+      case llvm::BinaryOperator::URem:
+        binop = BinOpExpr(clang::BO_Rem, lhs->getType());
+        break;
+
+      default:
+        LOG(FATAL) << "Unknown BinaryOperator operation";
+        break;
+    }
+  }
+}
+
+void ASTGenerator::visitCmpInst(llvm::CmpInst &inst) {
+  DLOG(INFO) << "visitCmpInst: " << remill::LLVMThingToString(&inst);
+  auto &cmp = stmts[&inst];
+  if (!cmp) {
+    // Get declaration context
+    auto fdecl = GetFunctionDecl(&inst);
+    // Get operands
+    auto lhs = GetOperandExpr(fdecl, inst.getOperand(0));
+    auto rhs = GetOperandExpr(fdecl, inst.getOperand(1));
+    // Convenience wrapper
+    auto CmpExpr = [this, &lhs, &rhs](clang::BinaryOperatorKind opc) {
+      return CreateBinaryOperator(ast_ctx, opc, lhs, rhs, ast_ctx.BoolTy);
+    };
+    // Where the magic happens
+    switch (inst.getPredicate()) {
+      case llvm::CmpInst::ICMP_EQ:
+        cmp = CmpExpr(clang::BO_EQ);
+        break;
+
+      default:
+        LOG(FATAL) << "Unknown CmpInst predicate";
+        break;
+    }
   }
 }
 
