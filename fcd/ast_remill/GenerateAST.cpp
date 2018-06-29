@@ -17,13 +17,11 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
+#include <llvm/ADT/DepthFirstIterator.h>
 #include <llvm/ADT/PostOrderIterator.h>
 #include <llvm/Analysis/CFG.h>
 
-#include <clang/AST/Expr.h>
-#include <clang/Basic/Builtins.h>
 #include <clang/Basic/TargetInfo.h>
-#include "clang/Lex/Preprocessor.h"
 
 #include <unordered_set>
 #include <vector>
@@ -36,16 +34,37 @@ namespace fcd {
 
 namespace {
 
+using CFGEdge = std::pair<const llvm::BasicBlock *, const llvm::BasicBlock *>;
+
 static void CFGSlice(
     llvm::BasicBlock *source, llvm::BasicBlock *sink,
     std::unordered_map<llvm::BasicBlock *, llvm::BasicBlock *> &result) {
   // Clear the output container
   result.clear();
+
+  auto it = llvm::df_begin(source);
+  auto DFSNextEdge = [&it]() {
+    CFGEdge result = {nullptr, nullptr};
+    if (it == llvm::df_end(source)) {
+      
+    }
+    auto to = *std::next(it);
+  };
+
+  CFGEdge current = {nullptr, nullptr};
+  for (auto it = df_begin; it != df_end; ++it) {
+    if (!current.first) {
+      continue;
+    }
+  }
 }
+
 }  // namespace
 
 void GenerateAST::StructureAcyclicRegion(llvm::Region *region) {
   DLOG(INFO) << "Structuring acyclic region " << region->getNameStr();
+  std::unordered_map<llvm::BasicBlock *, llvm::BasicBlock *> slice;
+  CFGSlice(region->getEntry(), region->getExit(), slice);
 }
 
 void GenerateAST::StructureCyclicRegion(llvm::Region *region) {
@@ -90,8 +109,6 @@ bool GenerateAST::runOnModule(llvm::Module &module) {
     ast_gen->VisitFunctionDecl(func);
   }
 
-  using CFGEdge = std::pair<const llvm::BasicBlock *, const llvm::BasicBlock *>;
-
   for (auto &func : module.functions()) {
     if (!func.isDeclaration()) {
       // Compute back edges using a DFS walk of the CFG
@@ -123,8 +140,8 @@ bool GenerateAST::runOnModule(llvm::Module &module) {
     }
   }
 
-  ins.getASTContext().getTranslationUnitDecl()->dump();
-  ins.getASTContext().getTranslationUnitDecl()->print(llvm::outs());
+  // ins.getASTContext().getTranslationUnitDecl()->dump();
+  // ins.getASTContext().getTranslationUnitDecl()->print(llvm::outs());
 
   return true;
 }
