@@ -36,26 +36,31 @@ namespace {
 
 using CFGEdge = std::pair<const llvm::BasicBlock *, const llvm::BasicBlock *>;
 
-static void CFGSlice(
-    llvm::BasicBlock *source, llvm::BasicBlock *sink,
-    std::unordered_map<llvm::BasicBlock *, llvm::BasicBlock *> &result) {
+static void CFGSlice(llvm::BasicBlock *source, llvm::BasicBlock *sink,
+                     std::vector<CFGEdge> &result) {
   // Clear the output container
   result.clear();
 
-  auto it = llvm::df_begin(source);
-  auto DFSNextEdge = [&it]() {
-    CFGEdge result = {nullptr, nullptr};
-    if (it == llvm::df_end(source)) {
-      
+  for (auto it = llvm::df_begin(source); it != llvm::df_end(source); ++it) {
+    auto path_len = it.getPathLength();
+    if (path_len > 1) {
+      df_edges.push_back({it.getPath(path_len - 2), *it});
+      for (auto succ : llvm::successors(*it)) {
+        if (it.nodeVisited(succ)) {
+          df_edges.push_back({*it, succ});
+        }
+      }
     }
-    auto to = *std::next(it);
+  }
+
+  auto LLVMThingToString = [](const llvm::Value *cval) {
+    auto val = const_cast<llvm::Value *>(cval);
+    return remill::LLVMThingToString(val);
   };
 
-  CFGEdge current = {nullptr, nullptr};
-  for (auto it = df_begin; it != df_end; ++it) {
-    if (!current.first) {
-      continue;
-    }
+  for (auto edge : df_edges) {
+    DLOG(INFO) << "FROM: " << LLVMThingToString(&*edge.first->begin());
+    DLOG(INFO) << "TO: " << LLVMThingToString(&*edge.second->begin());
   }
 }
 
@@ -63,7 +68,7 @@ static void CFGSlice(
 
 void GenerateAST::StructureAcyclicRegion(llvm::Region *region) {
   DLOG(INFO) << "Structuring acyclic region " << region->getNameStr();
-  std::unordered_map<llvm::BasicBlock *, llvm::BasicBlock *> slice;
+  std::vector<CFGEdge> slice;
   CFGSlice(region->getEntry(), region->getExit(), slice);
 }
 
