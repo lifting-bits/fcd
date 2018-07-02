@@ -34,33 +34,43 @@ namespace fcd {
 
 namespace {
 
-using CFGEdge = std::pair<const llvm::BasicBlock *, const llvm::BasicBlock *>;
+using BBEdge = std::pair<const llvm::BasicBlock *, const llvm::BasicBlock *>;
+using BBGraph =
+    std::unordered_map<llvm::BasicBlock *, std::vector<llvm::BasicBlock *>>;
 
 static void CFGSlice(llvm::BasicBlock *source, llvm::BasicBlock *sink,
-                     std::vector<CFGEdge> &result) {
+                     BBGraph &result) {
   // Clear the output container
   result.clear();
-
+  // Adds a path to the result slice BBGraph
+  auto AddPath = [&result](std::vector<llvm::BasicBlock *> &path) {
+    for (unsigned i = 1; i < path.size(); ++i) {
+      result[path[i-1]].push_back(path[i]);
+      result[path[i]];
+    }
+  };
+  // DFS walk the CFG from `source` to `sink`
   for (auto it = llvm::df_begin(source); it != llvm::df_end(source); ++it) {
-    auto path_len = it.getPathLength();
-    if (path_len > 1) {
-      df_edges.push_back({it.getPath(path_len - 2), *it});
-      for (auto succ : llvm::successors(*it)) {
-        if (it.nodeVisited(succ)) {
-          df_edges.push_back({*it, succ});
+    for (auto succ : llvm::successors(*it)) {
+      // Construct the path up to this node while
+      // checking if `succ` in already on the path
+      std::vector<llvm::BasicBlock *> path;
+      bool on_path = false;
+      for (unsigned i = 0; i < it.getPathLength(); ++i) {
+        auto node = it.getPath(i);
+        on_path = node == succ;
+        path.push_back(node);
+      }
+      // Check if the path leads to `sink`
+      path.push_back(succ);
+      if (!it.nodeVisited(succ)) {
+        if (succ == sink) {
+          AddPath(path);
         }
+      } else if (result.count(succ) && !on_path) {
+        AddPath(path);
       }
     }
-  }
-
-  auto LLVMThingToString = [](const llvm::Value *cval) {
-    auto val = const_cast<llvm::Value *>(cval);
-    return remill::LLVMThingToString(val);
-  };
-
-  for (auto edge : df_edges) {
-    DLOG(INFO) << "FROM: " << LLVMThingToString(&*edge.first->begin());
-    DLOG(INFO) << "TO: " << LLVMThingToString(&*edge.second->begin());
   }
 }
 
@@ -68,8 +78,14 @@ static void CFGSlice(llvm::BasicBlock *source, llvm::BasicBlock *sink,
 
 void GenerateAST::StructureAcyclicRegion(llvm::Region *region) {
   DLOG(INFO) << "Structuring acyclic region " << region->getNameStr();
-  std::vector<CFGEdge> slice;
+  BBGraph slice;
   CFGSlice(region->getEntry(), region->getExit(), slice);
+  for (auto &adjlist : slice) {
+    DLOG(INFO) << "NODE: " << remill::LLVMThingToString(&*adjlist.first->begin());
+    for (auto node : adjlist.second) {
+      DLOG(INFO) << "ADJ: " << remill::LLVMThingToString(&*node->begin());
+    }
+  }
 }
 
 void GenerateAST::StructureCyclicRegion(llvm::Region *region) {
@@ -117,7 +133,7 @@ bool GenerateAST::runOnModule(llvm::Module &module) {
   for (auto &func : module.functions()) {
     if (!func.isDeclaration()) {
       // Compute back edges using a DFS walk of the CFG
-      llvm::SmallVector<CFGEdge, 10> back_edges;
+      llvm::SmallVector<BBEdge, 10> back_edges;
       llvm::FindFunctionBackedges(func, back_edges);
       // Extract loop headers
       std::unordered_set<const llvm::BasicBlock *> loop_headers;
