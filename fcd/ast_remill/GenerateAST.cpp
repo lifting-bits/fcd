@@ -45,7 +45,7 @@ static void CFGSlice(llvm::BasicBlock *source, llvm::BasicBlock *sink,
   // Adds a path to the result slice BBGraph
   auto AddPath = [&result](std::vector<llvm::BasicBlock *> &path) {
     for (unsigned i = 1; i < path.size(); ++i) {
-      result[path[i-1]].push_back(path[i]);
+      result[path[i - 1]].push_back(path[i]);
       result[path[i]];
     }
   };
@@ -80,11 +80,27 @@ void GenerateAST::StructureAcyclicRegion(llvm::Region *region) {
   DLOG(INFO) << "Structuring acyclic region " << region->getNameStr();
   BBGraph slice;
   CFGSlice(region->getEntry(), region->getExit(), slice);
-  for (auto &adjlist : slice) {
-    DLOG(INFO) << "NODE: " << remill::LLVMThingToString(&*adjlist.first->begin());
-    for (auto node : adjlist.second) {
-      DLOG(INFO) << "ADJ: " << remill::LLVMThingToString(&*node->begin());
+  auto worklist = slice[region->getEntry()];
+  while (!worklist.empty()) {
+    auto block = worklist.back();
+    worklist.pop_back();
+    auto term = block->getTerminator();
+    switch (term->getOpcode()) {
+      case llvm::Instruction::Br: {
+        auto br = llvm::cast<llvm::BranchInst>(term);
+        if (br->isConditional()) {
+        } else {
+        }
+      } break;
+      
+      case llvm::Instruction::Ret:
+        break;
+
+      default:
+        LOG(FATAL) << "Unknown terminator instruction";
+        break;
     }
+    worklist.insert(worklist.end(), slice[block].begin(), slice[block].end());
   }
 }
 
