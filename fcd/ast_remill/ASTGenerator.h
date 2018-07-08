@@ -35,16 +35,17 @@ class ASTGenerator : public llvm::InstVisitor<ASTGenerator> {
   std::unordered_map<llvm::Value *, clang::Decl *> decls;
   std::unordered_map<llvm::Value *, clang::Stmt *> stmts;
 
-  clang::Expr *GetOperandExpr(clang::DeclContext *decl_ctx, llvm::Value *val);
   clang::FunctionDecl *GetFunctionDecl(llvm::Instruction *inst);
+  clang::Expr *GetOperandExpr(clang::DeclContext *decl_ctx, llvm::Value *val);
 
  public:
   ASTGenerator(clang::CompilerInstance &ins);
+  
+  clang::Stmt *GetOrCreateStmt(llvm::Value *val);
+  clang::Decl *GetOrCreateDecl(llvm::Value *val);
 
   void VisitGlobalVar(llvm::GlobalVariable &var);
   void VisitFunctionDecl(llvm::Function &func);
-  void VisitFunctionDefn(llvm::Function &func);
-  void VisitBasicBlock(llvm::BasicBlock &block);
 
   void visitCallInst(llvm::CallInst &inst);
   void visitGetElementPtrInst(llvm::GetElementPtrInst &inst);

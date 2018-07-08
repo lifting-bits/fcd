@@ -27,9 +27,12 @@ namespace fcd {
 
 class GenerateAST : public llvm::ModulePass {
  private:
+  clang::ASTContext *ast_ctx;
   std::unique_ptr<ASTGenerator> ast_gen;
+  std::unordered_map<llvm::BasicBlock *, clang::Expr *> reaching_conds;
 
-  void StructureAcyclicRegion(llvm::Region *region);
+  void StructureAcyclicRegion(llvm::Region *region,
+                              std::vector<llvm::BasicBlock *> &rpo_walk);
   void StructureCyclicRegion(llvm::Region *region);
 
  public:

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#define GOOGLE_STRIP_LOG 1
+// #define GOOGLE_STRIP_LOG 1
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -225,6 +225,34 @@ clang::Expr *ASTGenerator::GetOperandExpr(clang::DeclContext *decl_ctx,
   return result;
 }
 
+clang::Stmt *ASTGenerator::GetOrCreateStmt(llvm::Value *val) {
+  auto &stmt = stmts[val];
+  if (!stmt) {
+    if (auto inst = llvm::dyn_cast<llvm::Instruction>(val)) {
+      visit(inst->getParent());
+    } else {
+      LOG(FATAL) << "Unsupported value type";
+    }
+  }
+  return stmt;
+}
+
+clang::Decl *ASTGenerator::GetOrCreateDecl(llvm::Value *val) {
+  auto &decl = decls[val];
+  if (!decl) {
+    if (auto func = llvm::dyn_cast<llvm::Function>(val)) {
+      VisitFunctionDecl(*func);
+    } else if (auto gvar = llvm::dyn_cast<llvm::GlobalVariable>(val)) {
+      VisitGlobalVar(*gvar);
+    } else if (auto inst = llvm::dyn_cast<llvm::AllocaInst>(val)) {
+      visitAllocaInst(*inst);
+    } else {
+      LOG(FATAL) << "Unsupported value type";
+    }
+  }
+  return decl;
+}
+
 void ASTGenerator::VisitGlobalVar(llvm::GlobalVariable &gvar) {
   DLOG(INFO) << "VisitGlobalVar: " << remill::LLVMThingToString(&gvar);
   auto &var = decls[&gvar];
@@ -284,46 +312,48 @@ void ASTGenerator::VisitFunctionDecl(llvm::Function &func) {
   }
 }
 
-void ASTGenerator::VisitFunctionDefn(llvm::Function &func) {
-  auto name = func.getName().str();
-  DLOG(INFO) << "VisitFunctionDefn: " << name;
-  auto &compound = stmts[&func];
-  if (!compound) {
-    std::vector<clang::Stmt *> compounds;
-    for (auto &block : func) {
-      auto stmt = stmts[&block];
-      CHECK(stmt) << "CompoundStmt for block does not exist";
-      compounds.push_back(stmt);
-    }
+// void ASTGenerator::VisitFunctionDefn(llvm::Function &func) {
+//   auto name = func.getName().str();
+//   DLOG(INFO) << "VisitFunctionDefn: " << name;
+//   auto &compound = stmts[&func];
+//   if (!compound) {
+//     std::vector<clang::Stmt *> compounds;
+//     for (auto &block : func) {
+//       auto stmt = stmts[&block];
+//       CHECK(stmt) << "CompoundStmt for block does not exist";
+//       compounds.push_back(stmt);
+//     }
 
-    compound = new (ast_ctx) clang::CompoundStmt(
-        ast_ctx, compounds, clang::SourceLocation(), clang::SourceLocation());
+//     compound = new (ast_ctx) clang::CompoundStmt(
+//         ast_ctx, compounds, clang::SourceLocation(),
+//         clang::SourceLocation());
 
-    if (auto decl = llvm::dyn_cast<clang::FunctionDecl>(decls[&func])) {
-      decl->setBody(compound);
-    } else {
-      LOG(FATAL) << "FunctionDecl for function does not exist";
-    }
-  }
-}
+//     if (auto decl = llvm::dyn_cast<clang::FunctionDecl>(decls[&func])) {
+//       decl->setBody(compound);
+//     } else {
+//       LOG(FATAL) << "FunctionDecl for function does not exist";
+//     }
+//   }
+// }
 
-void ASTGenerator::VisitBasicBlock(llvm::BasicBlock &block) {
-  auto name = block.hasName() ? block.getName().str() : "<no_name>";
-  DLOG(INFO) << "VisitBasicBlock: " << name;
-  auto &compound = stmts[&block];
-  if (!compound) {
-    DLOG(INFO) << "Creating CompoundStmt for " << name;
-    visit(block);
-    std::vector<clang::Stmt *> block_stmts;
-    for (auto &inst : block) {
-      if (stmts.count(&inst)) {
-        block_stmts.push_back(stmts[&inst]);
-      }
-    }
-    compound = new (ast_ctx) clang::CompoundStmt(
-        ast_ctx, block_stmts, clang::SourceLocation(), clang::SourceLocation());
-  }
-}
+// void ASTGenerator::VisitBasicBlock(llvm::BasicBlock &block) {
+//   auto name = block.hasName() ? block.getName().str() : "<no_name>";
+//   DLOG(INFO) << "VisitBasicBlock: " << name;
+//   auto &compound = stmts[&block];
+//   if (!compound) {
+//     DLOG(INFO) << "Creating CompoundStmt for " << name;
+//     visit(block);
+//     std::vector<clang::Stmt *> block_stmts;
+//     for (auto &inst : block) {
+//       if (stmts.count(&inst)) {
+//         block_stmts.push_back(stmts[&inst]);
+//       }
+//     }
+//     compound = new (ast_ctx) clang::CompoundStmt(
+//         ast_ctx, block_stmts, clang::SourceLocation(),
+//         clang::SourceLocation());
+//   }
+// }
 
 void ASTGenerator::visitCallInst(llvm::CallInst &inst) {
   DLOG(INFO) << "visitCallInst: " << remill::LLVMThingToString(&inst);

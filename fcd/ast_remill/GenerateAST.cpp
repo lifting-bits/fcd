@@ -21,8 +21,10 @@
 #include <llvm/ADT/PostOrderIterator.h>
 #include <llvm/Analysis/CFG.h>
 
+#include <clang/AST/Expr.h>
 #include <clang/Basic/TargetInfo.h>
 
+#include <set>
 #include <unordered_set>
 #include <vector>
 
@@ -74,33 +76,96 @@ static void CFGSlice(llvm::BasicBlock *source, llvm::BasicBlock *sink,
   }
 }
 
+clang::IfStmt *CreateIfStmt(clang::ASTContext &ctx, clang::Expr *cond,
+                            clang::Stmt *then) {
+  return new (ctx)
+      clang::IfStmt(ctx, clang::SourceLocation(), /* IsConstexpr=*/false,
+                    /* init=*/nullptr,
+                    /* var=*/nullptr, cond, then);
+}
+
+clang::Expr *CreateBoolBinOp(clang::ASTContext &ctx,
+                             clang::BinaryOperatorKind opc, clang::Expr *lhs,
+                             clang::Expr *rhs) {
+  CHECK(lhs || rhs) << "No operand given for binary logical expression";
+
+  if (!lhs) {
+    return rhs;
+  } else if (!rhs) {
+    return lhs;
+  } else {
+    return new (ctx)
+        clang::BinaryOperator(lhs, rhs, opc, ctx.BoolTy, clang::VK_RValue,
+                              clang::OK_Ordinary, clang::SourceLocation(),
+                              /*fpContractable=*/false);
+  }
+}
+
+clang::Expr *CreateAndExpr(clang::ASTContext &ctx, clang::Expr *lhs,
+                           clang::Expr *rhs) {
+  return CreateBoolBinOp(ctx, clang::BO_LAnd, lhs, rhs);
+}
+
+clang::Expr *CreateOrExpr(clang::ASTContext &ctx, clang::Expr *lhs,
+                          clang::Expr *rhs) {
+  return CreateBoolBinOp(ctx, clang::BO_LOr, lhs, rhs);
+}
+
+clang::Expr *CreateNotExpr(clang::ASTContext &ctx, clang::Expr *op) {
+  CHECK(op) << "No operand given for unary logical expression";
+
+  return new (ctx)
+      clang::UnaryOperator(op, clang::UO_LNot, ctx.BoolTy, clang::VK_RValue,
+                           clang::OK_Ordinary, clang::SourceLocation());
+}
+
 }  // namespace
 
-void GenerateAST::StructureAcyclicRegion(llvm::Region *region) {
+void GenerateAST::StructureAcyclicRegion(
+    llvm::Region *region, std::vector<llvm::BasicBlock *> &rpo_walk) {
   DLOG(INFO) << "Structuring acyclic region " << region->getNameStr();
   BBGraph slice;
   CFGSlice(region->getEntry(), region->getExit(), slice);
-  auto worklist = slice[region->getEntry()];
-  while (!worklist.empty()) {
-    auto block = worklist.back();
-    worklist.pop_back();
-    auto term = block->getTerminator();
-    switch (term->getOpcode()) {
-      case llvm::Instruction::Br: {
-        auto br = llvm::cast<llvm::BranchInst>(term);
-        if (br->isConditional()) {
-        } else {
-        }
-      } break;
-      
-      case llvm::Instruction::Ret:
-        break;
-
-      default:
-        LOG(FATAL) << "Unknown terminator instruction";
-        break;
+  for (auto block : rpo_walk) {
+    // Ignore non-slice blocks
+    if (slice.count(block) == 0) {
+      continue;
     }
-    worklist.insert(worklist.end(), slice[block].begin(), slice[block].end());
+    // Gather reaching conditions from predecessors of the block
+    for (auto pred : llvm::predecessors(block)) {
+      auto cond = reaching_conds[pred];
+      // Construct the reaching condition to corresponding to the
+      // CFG edge from `pred` to `block`. Each terminator type
+      // has it's own handling.
+      auto term = pred->getTerminator();
+      switch (term->getOpcode()) {
+        // Handle conditional branches
+        case llvm::Instruction::Br: {
+          auto br = llvm::cast<llvm::BranchInst>(term);
+          if (br->isConditional()) {
+            // Get the edge condition
+            auto expr = llvm::cast<clang::Expr>(
+                ast_gen->GetOrCreateStmt(br->getCondition()));
+            // Negate if `br` jumps to `block` when `expr` is false
+            if (block == br->getSuccessor(1)) {
+              expr = CreateNotExpr(*ast_ctx, expr);
+            }
+            // Append `cond` to the predecessor condition via an `&&`
+            cond = CreateAndExpr(*ast_ctx, cond, expr);
+          }
+        } break;
+        // Handle returns
+        case llvm::Instruction::Ret:
+          break;
+
+        default:
+          LOG(FATAL) << "Unknown terminator instruction";
+          break;
+      }
+      // Append `cond` to reaching conditions of other predecessors via an `||`
+      reaching_conds[block] =
+          CreateOrExpr(*ast_ctx, reaching_conds[block], cond);
+    }
   }
 }
 
@@ -136,6 +201,7 @@ bool GenerateAST::runOnModule(llvm::Module &module) {
   ins.createPreprocessor(clang::TU_Complete);
   ins.createASTContext();
 
+  ast_ctx = &ins.getASTContext();
   ast_gen = std::make_unique<ASTGenerator>(ins);
 
   for (auto &var : module.globals()) {
@@ -156,12 +222,17 @@ bool GenerateAST::runOnModule(llvm::Module &module) {
       for (auto edge : back_edges) {
         loop_headers.insert(edge.second);
       }
-      // Walk the CFG in post-order and structurize regions
+      // Get single-entry, single-exit regions
       auto regions = &getAnalysis<llvm::RegionInfoPass>(func).getRegionInfo();
-      auto po_walk =
-          llvm::make_range(llvm::po_begin(&func), llvm::po_end(&func));
+      // Get a post-order walk for iterating over regions
+      std::vector<llvm::BasicBlock *> po_walk(llvm::po_begin(&func),
+                                              llvm::po_end(&func));
+      // Get a reverse post-order walk for iterating over blocks in regions in
+      // structurization
+      std::vector<llvm::BasicBlock *> rpo_walk(po_walk.rbegin(),
+                                               po_walk.rend());
+      // Walk the CFG in post-order and structurize regions
       for (auto block : po_walk) {
-        ast_gen->VisitBasicBlock(*block);
         // Check if `block` is the head of a region
         auto region = regions->getRegionFor(block);
         if (block == region->getEntry()) {
@@ -169,16 +240,24 @@ bool GenerateAST::runOnModule(llvm::Module &module) {
           if (loop_headers.count(block) > 0) {
             StructureCyclicRegion(region);
           } else {
-            StructureAcyclicRegion(region);
+            StructureAcyclicRegion(region, rpo_walk);
           }
         }
       }
-      ast_gen->VisitFunctionDefn(func);
+
+      std::vector<clang::Stmt *> body;
+      for (auto pair : reaching_conds) {
+        body.push_back(pair.second);
+      }
+      auto fdecl =
+          llvm::cast<clang::FunctionDecl>(ast_gen->GetOrCreateDecl(&func));
+      fdecl->setBody(new (ast_ctx) clang::CompoundStmt(
+          *ast_ctx, body, clang::SourceLocation(), clang::SourceLocation()));
     }
   }
 
   // ins.getASTContext().getTranslationUnitDecl()->dump();
-  // ins.getASTContext().getTranslationUnitDecl()->print(llvm::outs());
+  ins.getASTContext().getTranslationUnitDecl()->print(llvm::outs());
 
   return true;
 }
