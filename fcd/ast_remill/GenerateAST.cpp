@@ -24,7 +24,6 @@
 #include <clang/AST/Expr.h>
 #include <clang/Basic/TargetInfo.h>
 
-#include <set>
 #include <unordered_set>
 #include <vector>
 
@@ -55,7 +54,7 @@ static void CFGSlice(llvm::BasicBlock *source, llvm::BasicBlock *sink,
   for (auto it = llvm::df_begin(source); it != llvm::df_end(source); ++it) {
     for (auto succ : llvm::successors(*it)) {
       // Construct the path up to this node while
-      // checking if `succ` in already on the path
+      // checking if `succ` is already on the path
       std::vector<llvm::BasicBlock *> path;
       bool on_path = false;
       for (unsigned i = 0; i < it.getPathLength(); ++i) {
@@ -129,6 +128,12 @@ void GenerateAST::StructureAcyclicRegion(
   for (auto block : rpo_walk) {
     // Ignore non-slice blocks
     if (slice.count(block) == 0) {
+      continue;
+    }
+    // Ignore non-region blocks. This effectively reduces regions
+    // into single CFG nodes, as the origina structurization
+    // algorithm requires.
+    if (region != region->getRegionInfo()->getRegionFor(block)) {
       continue;
     }
     // Gather reaching conditions from predecessors of the block
@@ -227,7 +232,7 @@ bool GenerateAST::runOnModule(llvm::Module &module) {
       // Get a post-order walk for iterating over regions
       std::vector<llvm::BasicBlock *> po_walk(llvm::po_begin(&func),
                                               llvm::po_end(&func));
-      // Get a reverse post-order walk for iterating over blocks in regions in
+      // Get a reverse post-order walk for iterating over region blocks in
       // structurization
       std::vector<llvm::BasicBlock *> rpo_walk(po_walk.rbegin(),
                                                po_walk.rend());

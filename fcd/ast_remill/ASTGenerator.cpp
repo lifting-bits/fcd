@@ -543,6 +543,10 @@ void ASTGenerator::visitCmpInst(llvm::CmpInst &inst) {
       case llvm::CmpInst::ICMP_EQ:
         cmp = CmpExpr(clang::BO_EQ);
         break;
+      
+      case llvm::CmpInst::ICMP_NE:
+        cmp = CmpExpr(clang::BO_NE);
+        break;
 
       default:
         LOG(FATAL) << "Unknown CmpInst predicate";
