@@ -75,6 +75,12 @@ static void CFGSlice(llvm::BasicBlock *source, llvm::BasicBlock *sink,
   }
 }
 
+clang::CompoundStmt *CreateCompoundStmt(clang::ASTContext &ctx,
+                                        std::vector<clang::Stmt *> &stmts) {
+  return new (ctx) clang::CompoundStmt(ctx, stmts, clang::SourceLocation(),
+                                       clang::SourceLocation());
+}
+
 clang::IfStmt *CreateIfStmt(clang::ASTContext &ctx, clang::Expr *cond,
                             clang::Stmt *then) {
   return new (ctx)
@@ -118,6 +124,11 @@ clang::Expr *CreateNotExpr(clang::ASTContext &ctx, clang::Expr *op) {
                            clang::OK_Ordinary, clang::SourceLocation());
 }
 
+clang::Expr *CreateTrueExpr(clang::ASTContext &ctx) {
+  return clang::IntegerLiteral::Create(ctx, llvm::APInt(1, 1), ctx.BoolTy,
+                                       clang::SourceLocation());
+}
+
 }  // namespace
 
 void GenerateAST::StructureAcyclicRegion(
@@ -125,15 +136,16 @@ void GenerateAST::StructureAcyclicRegion(
   DLOG(INFO) << "Structuring acyclic region " << region->getNameStr();
   BBGraph slice;
   CFGSlice(region->getEntry(), region->getExit(), slice);
+  std::vector<llvm::BasicBlock *> region_blocks;
   for (auto block : rpo_walk) {
     // Ignore non-slice blocks
     if (slice.count(block) == 0) {
       continue;
     }
-    // Ignore non-region blocks. This effectively reduces regions
-    // into single CFG nodes, as the origina structurization
-    // algorithm requires.
-    if (region != region->getRegionInfo()->getRegionFor(block)) {
+    // Ignore block for which we already have reaching conditions.
+    // These reaching conditions have been computed as part of a
+    // previous region.
+    if (reaching_conds[block]) {
       continue;
     }
     // Gather reaching conditions from predecessors of the block
@@ -171,7 +183,35 @@ void GenerateAST::StructureAcyclicRegion(
       reaching_conds[block] =
           CreateOrExpr(*ast_ctx, reaching_conds[block], cond);
     }
+    // Remember processed blocks
+    region_blocks.push_back(block);
   }
+  // Gather statements that must NOT be gated behind reaching conds
+  std::unordered_set<clang::Stmt *> cond_exprs;
+  for (auto block : region_blocks) {
+    if (auto cond = reaching_conds[block]) {
+      cond_exprs.insert(cond->child_begin(), cond->child_end());
+    }
+  }
+  // Create a compound statement representing the region
+  std::vector<clang::Stmt *> region_stmts;
+  for (auto block : region_blocks) {
+    std::vector<clang::Stmt *> block_stmts;
+    for (auto &inst : *block) {
+      auto stmt = ast_gen->GetOrCreateStmt(&inst);
+      if (cond_exprs.count(stmt) == 0) {
+        block_stmts.push_back(stmt);
+      }
+    }
+
+    auto compound = CreateCompoundStmt(*ast_ctx, block_stmts);
+
+    auto cond = reaching_conds[block] ? reaching_conds[block]
+                                      : CreateTrueExpr(*ast_ctx);
+
+    region_stmts.push_back(CreateIfStmt(*ast_ctx, cond, compound));
+  }
+  CreateCompoundStmt(*ast_ctx, region_stmts)->dump();
 }
 
 void GenerateAST::StructureCyclicRegion(llvm::Region *region) {
@@ -262,7 +302,7 @@ bool GenerateAST::runOnModule(llvm::Module &module) {
   }
 
   // ins.getASTContext().getTranslationUnitDecl()->dump();
-  ins.getASTContext().getTranslationUnitDecl()->print(llvm::outs());
+  // ins.getASTContext().getTranslationUnitDecl()->print(llvm::outs());
 
   return true;
 }
