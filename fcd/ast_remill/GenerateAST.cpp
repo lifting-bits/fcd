@@ -161,7 +161,7 @@ clang::CompoundStmt *GenerateAST::StructureAcyclicRegion(
     }
     // Ignore blocks with reaching conditions already computed from previous
     // structurization. This should be valid since regions are structurized
-    // in post-order, but still it's worth noting that this might not be a
+    // in post-order, but still it's worth noting that this might be a
     // source of trouble. 
     if (reaching_conds[block]) {
       continue;
