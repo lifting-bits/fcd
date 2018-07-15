@@ -137,6 +137,24 @@ static bool IsRegionBlock(llvm::Region *region, llvm::BasicBlock *block) {
   }
 }
 
+static bool IsSubregionEntry(llvm::Region *region, llvm::BasicBlock *block) {
+  for (auto &subregion : *region) {
+    if (subregion->getEntry() == block) {
+      return true;
+    }
+  }
+  return false;
+}
+
+static bool IsSubregionExit(llvm::Region *region, llvm::BasicBlock *block) {
+  for (auto &subregion : *region) {
+    if (subregion->getExit() == block) {
+      return true;
+    }
+  }
+  return false;
+}
+
 static llvm::Region *GetSubregion(llvm::Region *region,
                                   llvm::BasicBlock *block) {
   if (!region->contains(block)) {
@@ -162,7 +180,7 @@ clang::CompoundStmt *GenerateAST::StructureAcyclicRegion(
     // Ignore blocks with reaching conditions already computed from previous
     // structurization. This should be valid since regions are structurized
     // in post-order, but still it's worth noting that this might be a
-    // source of trouble. 
+    // source of trouble.
     if (reaching_conds[block]) {
       continue;
     }
@@ -215,8 +233,11 @@ clang::CompoundStmt *GenerateAST::StructureAcyclicRegion(
   // Create a compound statement representing the body of the region
   std::vector<clang::Stmt *> region_body;
   for (auto block : rpo_walk) {
-    // Check if the block is contained in the region and is a head of a
-    // subregion
+    // Ignore subregion exits. These are handled in their respective regions.
+    if (IsSubregionExit(region, block)) {
+      continue;
+    }
+    // Check if the block is a subregion entry
     auto subregion = GetSubregion(region, block);
     // Ignore blocks that are neither a subregion or a region block
     if (!subregion && !IsRegionBlock(region, block)) {
