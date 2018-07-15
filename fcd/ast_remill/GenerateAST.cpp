@@ -166,12 +166,60 @@ static llvm::Region *GetSubregion(llvm::Region *region,
 
 }  // namespace
 
+clang::CompoundStmt *GenerateAST::GetOrCreateRegionAST(
+    llvm::Region *region, std::vector<llvm::BasicBlock *> &rpo_walk) {
+  auto &region_stmt = region_stmts[region];
+  if (!region_stmt) {
+    // Create a compound statement representing the body of the region
+    std::vector<clang::Stmt *> region_body;
+    for (auto block : rpo_walk) {
+      // Ignore subregion exits. These are handled in their respective regions.
+      if (IsSubregionExit(region, block)) {
+        continue;
+      }
+      // Check if the block is a subregion entry
+      auto subregion = GetSubregion(region, block);
+      // Ignore blocks that are neither a subregion or a region block
+      if (!subregion && !IsRegionBlock(region, block)) {
+        continue;
+      }
+      // If the block is a head of a subregion, get the compound statement of
+      // the subregion otherwise create a new compound and gate it behind a
+      // reaching condition.
+      clang::CompoundStmt *compound = nullptr;
+      if (subregion) {
+        CHECK(compound = region_stmts[subregion]);
+      } else {
+        std::vector<clang::Stmt *> block_stmts;
+        for (auto &inst : *block) {
+          if (auto stmt = ast_gen->GetOrCreateStmt(&inst)) {
+            block_stmts.push_back(stmt);
+          }
+        }
+        // Create a compound, wrapping the block
+        compound = CreateCompoundStmt(*ast_ctx, block_stmts);
+      }
+      // The block is always reched if there's no condition, or the block is
+      // either the entry or exit
+      auto cond = reaching_conds[block];
+      if (!cond || block == region->getEntry() || block == region->getExit()) {
+        cond = CreateTrueExpr(*ast_ctx);
+      }
+      // Gate the compound and store it
+      region_body.push_back(CreateIfStmt(*ast_ctx, cond, compound));
+    }
+    // Wrap the region and store
+    region_stmt = CreateCompoundStmt(*ast_ctx, region_body);
+  }
+  // Voila, done.
+  return region_stmt;
+}
+
 clang::CompoundStmt *GenerateAST::StructureAcyclicRegion(
     llvm::Region *region, std::vector<llvm::BasicBlock *> &rpo_walk) {
   DLOG(INFO) << "Structuring acyclic region " << region->getNameStr();
   BBGraph slice;
   CFGSlice(region->getEntry(), region->getExit(), slice);
-  std::unordered_set<llvm::BasicBlock *> region_blocks;
   for (auto block : rpo_walk) {
     // Ignore non-region blocks and blocks with
     if (!IsRegionBlock(region, block)) {
@@ -219,59 +267,9 @@ clang::CompoundStmt *GenerateAST::StructureAcyclicRegion(
       reaching_conds[block] =
           CreateOrExpr(*ast_ctx, reaching_conds[block], cond);
     }
-    // Remember processed blocks
-    region_blocks.insert(block);
   }
-  // Gather statements that used in reaching conditions. These should not appear
-  // in the compound statements of their blocks.
-  std::unordered_set<clang::Stmt *> cond_exprs;
-  for (auto block : region_blocks) {
-    if (auto cond = reaching_conds[block]) {
-      cond_exprs.insert(cond->child_begin(), cond->child_end());
-    }
-  }
-  // Create a compound statement representing the body of the region
-  std::vector<clang::Stmt *> region_body;
-  for (auto block : rpo_walk) {
-    // Ignore subregion exits. These are handled in their respective regions.
-    if (IsSubregionExit(region, block)) {
-      continue;
-    }
-    // Check if the block is a subregion entry
-    auto subregion = GetSubregion(region, block);
-    // Ignore blocks that are neither a subregion or a region block
-    if (!subregion && !IsRegionBlock(region, block)) {
-      continue;
-    }
-    // If the block is a head of a subregion, get the compound statement of the
-    // subregion otherwise create a new compound and gate it behind a reaching
-    // condition.
-    clang::CompoundStmt *compound = nullptr;
-    if (subregion) {
-      CHECK(compound = region_stmts[subregion]);
-    } else {
-      std::vector<clang::Stmt *> block_stmts;
-      for (auto &inst : *block) {
-        if (auto stmt = ast_gen->GetOrCreateStmt(&inst)) {
-          if (cond_exprs.count(stmt) == 0) {
-            block_stmts.push_back(stmt);
-          }
-        }
-      }
-      // Create a compound, wrapping the block
-      compound = CreateCompoundStmt(*ast_ctx, block_stmts);
-    }
-    // The block is always reched if there's no condition, or the block is
-    // either the entry or exit
-    auto cond = reaching_conds[block];
-    if (!cond || block == region->getEntry() || block == region->getExit()) {
-      cond = CreateTrueExpr(*ast_ctx);
-    }
-    // Gate the compound and store it
-    region_body.push_back(CreateIfStmt(*ast_ctx, cond, compound));
-  }
-  // Wrap the region and return
-  return CreateCompoundStmt(*ast_ctx, region_body);
+  // Create the region body
+  return GetOrCreateRegionAST(region, rpo_walk);
 }
 
 clang::CompoundStmt *GenerateAST::StructureCyclicRegion(llvm::Region *region) {

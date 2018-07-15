@@ -32,6 +32,9 @@ class GenerateAST : public llvm::ModulePass {
   std::unordered_map<llvm::BasicBlock *, clang::Expr *> reaching_conds;
   std::unordered_map<llvm::Region *, clang::CompoundStmt *> region_stmts;
 
+  clang::CompoundStmt *GetOrCreateRegionAST(
+      llvm::Region *region, std::vector<llvm::BasicBlock *> &rpo_walk);
+
   clang::CompoundStmt *StructureAcyclicRegion(
       llvm::Region *region, std::vector<llvm::BasicBlock *> &rpo_walk);
   clang::CompoundStmt *StructureCyclicRegion(llvm::Region *region);
