@@ -75,23 +75,23 @@ static void CFGSlice(llvm::BasicBlock *source, llvm::BasicBlock *sink,
   }
 }
 
-clang::CompoundStmt *CreateCompoundStmt(clang::ASTContext &ctx,
-                                        std::vector<clang::Stmt *> &stmts) {
+static clang::CompoundStmt *CreateCompoundStmt(
+    clang::ASTContext &ctx, std::vector<clang::Stmt *> &stmts) {
   return new (ctx) clang::CompoundStmt(ctx, stmts, clang::SourceLocation(),
                                        clang::SourceLocation());
 }
 
-clang::IfStmt *CreateIfStmt(clang::ASTContext &ctx, clang::Expr *cond,
-                            clang::Stmt *then) {
+static clang::IfStmt *CreateIfStmt(clang::ASTContext &ctx, clang::Expr *cond,
+                                   clang::Stmt *then) {
   return new (ctx)
       clang::IfStmt(ctx, clang::SourceLocation(), /* IsConstexpr=*/false,
                     /* init=*/nullptr,
                     /* var=*/nullptr, cond, then);
 }
 
-clang::Expr *CreateBoolBinOp(clang::ASTContext &ctx,
-                             clang::BinaryOperatorKind opc, clang::Expr *lhs,
-                             clang::Expr *rhs) {
+static clang::Expr *CreateBoolBinOp(clang::ASTContext &ctx,
+                                    clang::BinaryOperatorKind opc,
+                                    clang::Expr *lhs, clang::Expr *rhs) {
   CHECK(lhs || rhs) << "No operand given for binary logical expression";
 
   if (!lhs) {
@@ -106,17 +106,17 @@ clang::Expr *CreateBoolBinOp(clang::ASTContext &ctx,
   }
 }
 
-clang::Expr *CreateAndExpr(clang::ASTContext &ctx, clang::Expr *lhs,
-                           clang::Expr *rhs) {
+static clang::Expr *CreateAndExpr(clang::ASTContext &ctx, clang::Expr *lhs,
+                                  clang::Expr *rhs) {
   return CreateBoolBinOp(ctx, clang::BO_LAnd, lhs, rhs);
 }
 
-clang::Expr *CreateOrExpr(clang::ASTContext &ctx, clang::Expr *lhs,
-                          clang::Expr *rhs) {
+static clang::Expr *CreateOrExpr(clang::ASTContext &ctx, clang::Expr *lhs,
+                                 clang::Expr *rhs) {
   return CreateBoolBinOp(ctx, clang::BO_LOr, lhs, rhs);
 }
 
-clang::Expr *CreateNotExpr(clang::ASTContext &ctx, clang::Expr *op) {
+static clang::Expr *CreateNotExpr(clang::ASTContext &ctx, clang::Expr *op) {
   CHECK(op) << "No operand given for unary logical expression";
 
   return new (ctx)
@@ -124,27 +124,45 @@ clang::Expr *CreateNotExpr(clang::ASTContext &ctx, clang::Expr *op) {
                            clang::OK_Ordinary, clang::SourceLocation());
 }
 
-clang::Expr *CreateTrueExpr(clang::ASTContext &ctx) {
-  return clang::IntegerLiteral::Create(ctx, llvm::APInt(1, 1), ctx.BoolTy,
-                                       clang::SourceLocation());
+static clang::Expr *CreateTrueExpr(clang::ASTContext &ctx) {
+  return clang::IntegerLiteral::Create(
+      ctx, llvm::APInt(1, 1), ctx.UnsignedIntTy, clang::SourceLocation());
+}
+
+static bool IsRegionBlock(llvm::Region *region, llvm::BasicBlock *block) {
+  if (block == region->getExit()) {
+    return true;
+  } else {
+    return region->getRegionInfo()->getRegionFor(block) == region;
+  }
+}
+
+static llvm::Region *GetSubregion(llvm::Region *region,
+                                  llvm::BasicBlock *block) {
+  if (!region->contains(block)) {
+    return nullptr;
+  } else {
+    return region->getSubRegionNode(block);
+  }
 }
 
 }  // namespace
 
-void GenerateAST::StructureAcyclicRegion(
+clang::CompoundStmt *GenerateAST::StructureAcyclicRegion(
     llvm::Region *region, std::vector<llvm::BasicBlock *> &rpo_walk) {
   DLOG(INFO) << "Structuring acyclic region " << region->getNameStr();
   BBGraph slice;
   CFGSlice(region->getEntry(), region->getExit(), slice);
-  std::vector<llvm::BasicBlock *> region_blocks;
+  std::unordered_set<llvm::BasicBlock *> region_blocks;
   for (auto block : rpo_walk) {
-    // Ignore non-slice blocks
-    if (slice.count(block) == 0) {
+    // Ignore non-region blocks and blocks with
+    if (!IsRegionBlock(region, block)) {
       continue;
     }
-    // Ignore block for which we already have reaching conditions.
-    // These reaching conditions have been computed as part of a
-    // previous region.
+    // Ignore blocks with reaching conditions already computed from previous
+    // structurization. This should be valid since regions are structurized
+    // in post-order, but still it's worth noting that this might not be a
+    // source of trouble. 
     if (reaching_conds[block]) {
       continue;
     }
@@ -184,38 +202,61 @@ void GenerateAST::StructureAcyclicRegion(
           CreateOrExpr(*ast_ctx, reaching_conds[block], cond);
     }
     // Remember processed blocks
-    region_blocks.push_back(block);
+    region_blocks.insert(block);
   }
-  // Gather statements that must NOT be gated behind reaching conds
+  // Gather statements that used in reaching conditions. These should not appear
+  // in the compound statements of their blocks.
   std::unordered_set<clang::Stmt *> cond_exprs;
   for (auto block : region_blocks) {
     if (auto cond = reaching_conds[block]) {
       cond_exprs.insert(cond->child_begin(), cond->child_end());
     }
   }
-  // Create a compound statement representing the region
-  std::vector<clang::Stmt *> region_stmts;
-  for (auto block : region_blocks) {
-    std::vector<clang::Stmt *> block_stmts;
-    for (auto &inst : *block) {
-      auto stmt = ast_gen->GetOrCreateStmt(&inst);
-      if (cond_exprs.count(stmt) == 0) {
-        block_stmts.push_back(stmt);
-      }
+  // Create a compound statement representing the body of the region
+  std::vector<clang::Stmt *> region_body;
+  for (auto block : rpo_walk) {
+    // Check if the block is contained in the region and is a head of a
+    // subregion
+    auto subregion = GetSubregion(region, block);
+    // Ignore blocks that are neither a subregion or a region block
+    if (!subregion && !IsRegionBlock(region, block)) {
+      continue;
     }
-
-    auto compound = CreateCompoundStmt(*ast_ctx, block_stmts);
-
-    auto cond = reaching_conds[block] ? reaching_conds[block]
-                                      : CreateTrueExpr(*ast_ctx);
-
-    region_stmts.push_back(CreateIfStmt(*ast_ctx, cond, compound));
+    // If the block is a head of a subregion, get the compound statement of the
+    // subregion otherwise create a new compound and gate it behind a reaching
+    // condition.
+    clang::CompoundStmt *compound = nullptr;
+    if (subregion) {
+      CHECK(compound = region_stmts[subregion]);
+    } else {
+      std::vector<clang::Stmt *> block_stmts;
+      for (auto &inst : *block) {
+        if (auto stmt = ast_gen->GetOrCreateStmt(&inst)) {
+          if (cond_exprs.count(stmt) == 0) {
+            block_stmts.push_back(stmt);
+          }
+        }
+      }
+      // Create a compound, wrapping the block
+      compound = CreateCompoundStmt(*ast_ctx, block_stmts);
+    }
+    // The block is always reched if there's no condition, or the block is
+    // either the entry or exit
+    auto cond = reaching_conds[block];
+    if (!cond || block == region->getEntry() || block == region->getExit()) {
+      cond = CreateTrueExpr(*ast_ctx);
+    }
+    // Gate the compound and store it
+    region_body.push_back(CreateIfStmt(*ast_ctx, cond, compound));
   }
-  CreateCompoundStmt(*ast_ctx, region_stmts)->dump();
+  // Wrap the region and return
+  return CreateCompoundStmt(*ast_ctx, region_body);
 }
 
-void GenerateAST::StructureCyclicRegion(llvm::Region *region) {
+clang::CompoundStmt *GenerateAST::StructureCyclicRegion(llvm::Region *region) {
   DLOG(INFO) << "Structuring cyclic region " << region->getNameStr();
+  std::vector<clang::Stmt *> region_stmts;
+  return CreateCompoundStmt(*ast_ctx, region_stmts);
 }
 
 char GenerateAST::ID = 0;
@@ -281,28 +322,24 @@ bool GenerateAST::runOnModule(llvm::Module &module) {
         // Check if `block` is the head of a region
         auto region = regions->getRegionFor(block);
         if (block == region->getEntry()) {
-          // Check if `region` contains a cycle
-          if (loop_headers.count(block) > 0) {
-            StructureCyclicRegion(region);
-          } else {
-            StructureAcyclicRegion(region, rpo_walk);
-          }
+          // Check if `region` contains a cycle, structurize and store
+          region_stmts[region] = loop_headers.count(block) > 0
+                                     ? StructureCyclicRegion(region)
+                                     : StructureAcyclicRegion(region, rpo_walk);
         }
       }
-
-      std::vector<clang::Stmt *> body;
-      for (auto pair : reaching_conds) {
-        body.push_back(pair.second);
-      }
+      // Get the function declaration AST node for `func`
       auto fdecl =
           llvm::cast<clang::FunctionDecl>(ast_gen->GetOrCreateDecl(&func));
-      fdecl->setBody(new (ast_ctx) clang::CompoundStmt(
-          *ast_ctx, body, clang::SourceLocation(), clang::SourceLocation()));
+      // Set it's body to the region compound that starts at it's entry basic
+      // block
+      fdecl->setBody(
+          region_stmts[regions->getRegionFor(&func.getEntryBlock())]);
     }
   }
 
   // ins.getASTContext().getTranslationUnitDecl()->dump();
-  // ins.getASTContext().getTranslationUnitDecl()->print(llvm::outs());
+  ins.getASTContext().getTranslationUnitDecl()->print(llvm::outs());
 
   return true;
 }
