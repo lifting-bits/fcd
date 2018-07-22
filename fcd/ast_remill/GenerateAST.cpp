@@ -130,11 +130,7 @@ static clang::Expr *CreateTrueExpr(clang::ASTContext &ctx) {
 }
 
 static bool IsRegionBlock(llvm::Region *region, llvm::BasicBlock *block) {
-  if (block == region->getExit()) {
-    return true;
-  } else {
-    return region->getRegionInfo()->getRegionFor(block) == region;
-  }
+  return region->getRegionInfo()->getRegionFor(block) == region;
 }
 
 static bool IsSubregionEntry(llvm::Region *region, llvm::BasicBlock *block) {
@@ -173,10 +169,6 @@ clang::CompoundStmt *GenerateAST::GetOrCreateRegionAST(
     // Create a compound statement representing the body of the region
     std::vector<clang::Stmt *> region_body;
     for (auto block : rpo_walk) {
-      // Ignore subregion exits. These are handled in their respective regions.
-      if (IsSubregionExit(region, block)) {
-        continue;
-      }
       // Check if the block is a subregion entry
       auto subregion = GetSubregion(region, block);
       // Ignore blocks that are neither a subregion or a region block
@@ -202,7 +194,7 @@ clang::CompoundStmt *GenerateAST::GetOrCreateRegionAST(
       // The block is always reched if there's no condition, or the block is
       // either the entry or exit
       auto cond = reaching_conds[block];
-      if (!cond || block == region->getEntry() || block == region->getExit()) {
+      if (!cond || block == region->getEntry()) {
         cond = CreateTrueExpr(*ast_ctx);
       }
       // Gate the compound and store it
@@ -221,15 +213,8 @@ clang::CompoundStmt *GenerateAST::StructureAcyclicRegion(
   BBGraph slice;
   CFGSlice(region->getEntry(), region->getExit(), slice);
   for (auto block : rpo_walk) {
-    // Ignore non-region blocks and blocks with
+    // Ignore non-region blocks
     if (!IsRegionBlock(region, block)) {
-      continue;
-    }
-    // Ignore blocks with reaching conditions already computed from previous
-    // structurization. This should be valid since regions are structurized
-    // in post-order, but still it's worth noting that this might be a
-    // source of trouble.
-    if (reaching_conds[block]) {
       continue;
     }
     // Gather reaching conditions from predecessors of the block
@@ -329,31 +314,28 @@ bool GenerateAST::runOnModule(llvm::Module &module) {
       }
       // Get single-entry, single-exit regions
       auto regions = &getAnalysis<llvm::RegionInfoPass>(func).getRegionInfo();
-      // Get a post-order walk for iterating over regions
-      std::vector<llvm::BasicBlock *> po_walk(llvm::po_begin(&func),
-                                              llvm::po_end(&func));
       // Get a reverse post-order walk for iterating over region blocks in
       // structurization
-      std::vector<llvm::BasicBlock *> rpo_walk(po_walk.rbegin(),
-                                               po_walk.rend());
-      // Walk the CFG in post-order and structurize regions
-      for (auto block : po_walk) {
-        // Check if `block` is the head of a region
-        auto region = regions->getRegionFor(block);
-        if (block == region->getEntry()) {
-          // Check if `region` contains a cycle, structurize and store
-          region_stmts[region] = loop_headers.count(block) > 0
-                                     ? StructureCyclicRegion(region)
-                                     : StructureAcyclicRegion(region, rpo_walk);
+      llvm::ReversePostOrderTraversal<llvm::Function*> rpo(&func);
+      std::vector<llvm::BasicBlock *> rpo_walk(rpo.begin(),
+                                               rpo.end());
+      // Recursively walk regions in post-order and structure
+      std::function<void(llvm::Region *)> POWalkSubRegions;
+      POWalkSubRegions = [&](llvm::Region *region) {
+        for (auto &subregion : *region) {
+          POWalkSubRegions(&*subregion);
         }
-      }
+        region_stmts[region] = loop_headers.count(region->getEntry()) > 0
+                                   ? StructureCyclicRegion(region)
+                                   : StructureAcyclicRegion(region, rpo_walk);
+      };
+      // Call the above declared bad boy
+      POWalkSubRegions(regions->getTopLevelRegion());
       // Get the function declaration AST node for `func`
       auto fdecl =
           llvm::cast<clang::FunctionDecl>(ast_gen->GetOrCreateDecl(&func));
-      // Set it's body to the region compound that starts at it's entry basic
-      // block
-      fdecl->setBody(
-          region_stmts[regions->getRegionFor(&func.getEntryBlock())]);
+      // Set it's body to the compound of the top-level region
+      fdecl->setBody(region_stmts[regions->getTopLevelRegion()]);
     }
   }
 
