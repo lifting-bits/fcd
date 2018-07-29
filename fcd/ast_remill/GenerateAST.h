@@ -31,12 +31,14 @@ class GenerateAST : public llvm::ModulePass {
   std::unique_ptr<ASTGenerator> ast_gen;
   std::unordered_map<llvm::BasicBlock *, clang::Expr *> reaching_conds;
   std::unordered_map<llvm::Region *, clang::CompoundStmt *> region_stmts;
+  
+  llvm::RegionInfo *regions;
+  llvm::LoopInfo *loops;
+  std::vector<llvm::BasicBlock *> rpo_walk;
 
-  clang::CompoundStmt *GetOrCreateRegionAST(
-      llvm::Region *region, std::vector<llvm::BasicBlock *> &rpo_walk);
-
-  clang::CompoundStmt *StructureAcyclicRegion(
-      llvm::Region *region, std::vector<llvm::BasicBlock *> &rpo_walk);
+  clang::Expr *GetOrCreateReachingCond(llvm::BasicBlock *block);
+  clang::CompoundStmt *GetOrCreateRegionAST(llvm::Region *region);
+  clang::CompoundStmt *StructureAcyclicRegion(llvm::Region *region);
   clang::CompoundStmt *StructureCyclicRegion(llvm::Region *region);
 
  public:

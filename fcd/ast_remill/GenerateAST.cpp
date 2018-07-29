@@ -20,6 +20,7 @@
 #include <llvm/ADT/DepthFirstIterator.h>
 #include <llvm/ADT/PostOrderIterator.h>
 #include <llvm/Analysis/CFG.h>
+#include <llvm/Analysis/LoopInfo.h>
 
 #include <clang/AST/Expr.h>
 #include <clang/Basic/TargetInfo.h>
@@ -162,10 +163,61 @@ static llvm::Region *GetSubregion(llvm::Region *region,
 
 }  // namespace
 
-clang::CompoundStmt *GenerateAST::GetOrCreateRegionAST(
-    llvm::Region *region, std::vector<llvm::BasicBlock *> &rpo_walk) {
+clang::Expr *GenerateAST::GetOrCreateReachingCond(llvm::BasicBlock *block) {
+  auto &cond = reaching_conds[block];
+  if (!cond) {
+    // Gather reaching conditions from predecessors of the block
+    for (auto pred : llvm::predecessors(block)) {
+      auto edge_cond = reaching_conds[pred];
+      // Construct the reaching condition to corresponding to the
+      // CFG edge from `pred` to `block`. Each terminator type
+      // has it's own handling.
+      auto term = pred->getTerminator();
+      switch (term->getOpcode()) {
+        // Handle conditional branches
+        case llvm::Instruction::Br: {
+          auto br = llvm::cast<llvm::BranchInst>(term);
+          if (br->isConditional()) {
+            // Get the edge condition
+            auto expr = llvm::cast<clang::Expr>(
+                ast_gen->GetOrCreateStmt(br->getCondition()));
+            // Negate if `br` jumps to `block` when `expr` is false
+            if (block == br->getSuccessor(1)) {
+              expr = CreateNotExpr(*ast_ctx, expr);
+            }
+            // Append `cond` to the predecessor condition via an `&&`
+            edge_cond = CreateAndExpr(*ast_ctx, edge_cond, expr);
+          }
+        } break;
+        // Handle returns
+        case llvm::Instruction::Ret:
+          break;
+
+        default:
+          LOG(FATAL) << "Unknown terminator instruction";
+          break;
+      }
+      // Append `cond` to reaching conditions of other predecessors via an `||`
+      if (edge_cond) {
+        cond = CreateOrExpr(*ast_ctx, cond, edge_cond);
+      }
+    }
+  }
+  return cond;
+}
+
+clang::CompoundStmt *GenerateAST::GetOrCreateRegionAST(llvm::Region *region) {
   auto &region_stmt = region_stmts[region];
   if (!region_stmt) {
+    // Compute reaching conditions
+    for (auto block : rpo_walk) {
+      // Ignore non-region blocks
+      if (!IsRegionBlock(region, block)) {
+        continue;
+      }
+      // Create reaching conditions
+      GetOrCreateReachingCond(block);
+    }
     // Create a compound statement representing the body of the region
     std::vector<clang::Stmt *> region_body;
     for (auto block : rpo_walk) {
@@ -192,7 +244,7 @@ clang::CompoundStmt *GenerateAST::GetOrCreateRegionAST(
         compound = CreateCompoundStmt(*ast_ctx, block_stmts);
       }
       // The block is always reched if there's no condition, or the block is
-      // either the entry or exit
+      // the entry
       auto cond = reaching_conds[block];
       if (!cond || block == region->getEntry()) {
         cond = CreateTrueExpr(*ast_ctx);
@@ -207,60 +259,40 @@ clang::CompoundStmt *GenerateAST::GetOrCreateRegionAST(
   return region_stmt;
 }
 
-clang::CompoundStmt *GenerateAST::StructureAcyclicRegion(
-    llvm::Region *region, std::vector<llvm::BasicBlock *> &rpo_walk) {
+clang::CompoundStmt *GenerateAST::StructureAcyclicRegion(llvm::Region *region) {
   DLOG(INFO) << "Structuring acyclic region " << region->getNameStr();
-  BBGraph slice;
-  CFGSlice(region->getEntry(), region->getExit(), slice);
   for (auto block : rpo_walk) {
     // Ignore non-region blocks
     if (!IsRegionBlock(region, block)) {
       continue;
     }
-    // Gather reaching conditions from predecessors of the block
-    for (auto pred : llvm::predecessors(block)) {
-      auto cond = reaching_conds[pred];
-      // Construct the reaching condition to corresponding to the
-      // CFG edge from `pred` to `block`. Each terminator type
-      // has it's own handling.
-      auto term = pred->getTerminator();
-      switch (term->getOpcode()) {
-        // Handle conditional branches
-        case llvm::Instruction::Br: {
-          auto br = llvm::cast<llvm::BranchInst>(term);
-          if (br->isConditional()) {
-            // Get the edge condition
-            auto expr = llvm::cast<clang::Expr>(
-                ast_gen->GetOrCreateStmt(br->getCondition()));
-            // Negate if `br` jumps to `block` when `expr` is false
-            if (block == br->getSuccessor(1)) {
-              expr = CreateNotExpr(*ast_ctx, expr);
-            }
-            // Append `cond` to the predecessor condition via an `&&`
-            cond = CreateAndExpr(*ast_ctx, cond, expr);
-          }
-        } break;
-        // Handle returns
-        case llvm::Instruction::Ret:
-          break;
-
-        default:
-          LOG(FATAL) << "Unknown terminator instruction";
-          break;
-      }
-      // Append `cond` to reaching conditions of other predecessors via an `||`
-      reaching_conds[block] =
-          CreateOrExpr(*ast_ctx, reaching_conds[block], cond);
-    }
+    // Create reaching conditions
+    GetOrCreateReachingCond(block);
   }
   // Create the region body
-  return GetOrCreateRegionAST(region, rpo_walk);
+  return GetOrCreateRegionAST(region);
 }
 
 clang::CompoundStmt *GenerateAST::StructureCyclicRegion(llvm::Region *region) {
   DLOG(INFO) << "Structuring cyclic region " << region->getNameStr();
-  std::vector<clang::Stmt *> region_stmts;
-  return CreateCompoundStmt(*ast_ctx, region_stmts);
+  // Get the loop for which the entry block of the region is a header
+  // loops->getLoopFor(region->getEntry())->print(llvm::errs());
+  auto loop = region->outermostLoopInRegion(loops, region->getEntry());
+  // Only add loop specific control-flow to regions which contain
+  // a recognized natural loop. Cyclic regions may only be fragments
+  // of a larger loop structure.
+  if (loop) {
+    // Get exits from the loop
+    llvm::SmallVector<llvm::BasicBlock *, 2> exits;
+    loop->getExitingBlocks(exits);
+    // Create break statements for each edge from an exit to it's successor
+    // that is *not* a loop block
+    for (auto block : exits) {
+      DLOG(INFO) << "EXIT: " << remill::LLVMThingToString(&*block->begin());
+    }
+  }
+  // Structure the rest of the loop body as a acyclic region
+  return StructureAcyclicRegion(region);
 }
 
 char GenerateAST::ID = 0;
@@ -270,6 +302,7 @@ GenerateAST::GenerateAST(void) : ModulePass(GenerateAST::ID) {}
 void GenerateAST::getAnalysisUsage(llvm::AnalysisUsage &usage) const {
   usage.addRequired<llvm::DominatorTreeWrapperPass>();
   usage.addRequired<llvm::RegionInfoPass>();
+  usage.addRequired<llvm::LoopInfoWrapperPass>();
 }
 
 bool GenerateAST::runOnModule(llvm::Module &module) {
@@ -304,30 +337,23 @@ bool GenerateAST::runOnModule(llvm::Module &module) {
 
   for (auto &func : module.functions()) {
     if (!func.isDeclaration()) {
-      // Compute back edges using a DFS walk of the CFG
-      llvm::SmallVector<BBEdge, 10> back_edges;
-      llvm::FindFunctionBackedges(func, back_edges);
-      // Extract loop headers
-      std::unordered_set<const llvm::BasicBlock *> loop_headers;
-      for (auto edge : back_edges) {
-        loop_headers.insert(edge.second);
-      }
       // Get single-entry, single-exit regions
-      auto regions = &getAnalysis<llvm::RegionInfoPass>(func).getRegionInfo();
+      regions = &getAnalysis<llvm::RegionInfoPass>(func).getRegionInfo();
+      // Get loops
+      loops = &getAnalysis<llvm::LoopInfoWrapperPass>(func).getLoopInfo();
       // Get a reverse post-order walk for iterating over region blocks in
       // structurization
-      llvm::ReversePostOrderTraversal<llvm::Function*> rpo(&func);
-      std::vector<llvm::BasicBlock *> rpo_walk(rpo.begin(),
-                                               rpo.end());
+      llvm::ReversePostOrderTraversal<llvm::Function *> rpo(&func);
+      rpo_walk.assign(rpo.begin(), rpo.end());
       // Recursively walk regions in post-order and structure
       std::function<void(llvm::Region *)> POWalkSubRegions;
       POWalkSubRegions = [&](llvm::Region *region) {
         for (auto &subregion : *region) {
           POWalkSubRegions(&*subregion);
         }
-        region_stmts[region] = loop_headers.count(region->getEntry()) > 0
+        region_stmts[region] = loops->isLoopHeader(region->getEntry())
                                    ? StructureCyclicRegion(region)
-                                   : StructureAcyclicRegion(region, rpo_walk);
+                                   : StructureAcyclicRegion(region);
       };
       // Call the above declared bad boy
       POWalkSubRegions(regions->getTopLevelRegion());
