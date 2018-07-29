@@ -444,6 +444,14 @@ void ASTGenerator::visitStoreInst(llvm::StoreInst &inst) {
     // Get the operand we're assigning to
     auto ptr = inst.getPointerOperand();
     clang::Expr *lhs = GetOperandExpr(fdecl, ptr);
+    // Strip `&` from the global variable reference
+    if (llvm::isa<llvm::GlobalVariable>(ptr)) {
+      if (auto unary = llvm::dyn_cast<clang::UnaryOperator>(lhs)) {
+        if (unary->getOpcode() == clang::UO_AddrOf) {
+          lhs = unary->getSubExpr();
+        }
+      }
+    }
     CHECK(lhs) << "Invalid assigned to operand";
     // Get the operand we're assigning from
     auto val = inst.getValueOperand();
@@ -517,6 +525,11 @@ void ASTGenerator::visitBinaryOperator(llvm::BinaryOperator &inst) {
       case llvm::BinaryOperator::URem:
         binop = BinOpExpr(clang::BO_Rem, lhs->getType());
         break;
+
+      case llvm::BinaryOperator::Add: {
+        auto type = GetQualType(ast_ctx, inst.getType());
+        binop = BinOpExpr(clang::BO_Add, type);
+      } break;
 
       default:
         LOG(FATAL) << "Unknown BinaryOperator operation";
