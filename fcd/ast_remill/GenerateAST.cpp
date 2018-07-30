@@ -25,6 +25,7 @@
 #include <clang/AST/Expr.h>
 #include <clang/Basic/TargetInfo.h>
 
+#include <algorithm>
 #include <unordered_set>
 #include <vector>
 
@@ -88,6 +89,10 @@ static clang::IfStmt *CreateIfStmt(clang::ASTContext &ctx, clang::Expr *cond,
       clang::IfStmt(ctx, clang::SourceLocation(), /* IsConstexpr=*/false,
                     /* init=*/nullptr,
                     /* var=*/nullptr, cond, then);
+}
+
+static clang::BreakStmt *CreateBreakStmt(clang::ASTContext &ctx) {
+  return new (ctx) clang::BreakStmt(clang::SourceLocation());
 }
 
 static clang::Expr *CreateBoolBinOp(clang::ASTContext &ctx,
@@ -163,118 +168,110 @@ static llvm::Region *GetSubregion(llvm::Region *region,
 
 }  // namespace
 
+clang::Expr *GenerateAST::CreateEdgeCond(llvm::BasicBlock *from,
+                                         llvm::BasicBlock *to) {
+  // Construct the edge condition for CFG edge `(from, to)`
+  clang::Expr *result = nullptr;
+  auto term = from->getTerminator();
+  switch (term->getOpcode()) {
+    // Handle conditional branches
+    case llvm::Instruction::Br: {
+      auto br = llvm::cast<llvm::BranchInst>(term);
+      if (br->isConditional()) {
+        // Get the edge condition
+        result = llvm::cast<clang::Expr>(
+            ast_gen->GetOrCreateStmt(br->getCondition()));
+        // Negate if `br` jumps to `to` when `expr` is false
+        if (to == br->getSuccessor(1)) {
+          result = CreateNotExpr(*ast_ctx, result);
+        }
+      }
+    } break;
+    // Handle returns
+    case llvm::Instruction::Ret:
+      break;
+
+    default:
+      LOG(FATAL) << "Unknown terminator instruction";
+      break;
+  }
+  return result;
+}
+
 clang::Expr *GenerateAST::GetOrCreateReachingCond(llvm::BasicBlock *block) {
   auto &cond = reaching_conds[block];
   if (!cond) {
     // Gather reaching conditions from predecessors of the block
     for (auto pred : llvm::predecessors(block)) {
-      auto edge_cond = reaching_conds[pred];
-      // Construct the reaching condition to corresponding to the
-      // CFG edge from `pred` to `block`. Each terminator type
-      // has it's own handling.
-      auto term = pred->getTerminator();
-      switch (term->getOpcode()) {
-        // Handle conditional branches
-        case llvm::Instruction::Br: {
-          auto br = llvm::cast<llvm::BranchInst>(term);
-          if (br->isConditional()) {
-            // Get the edge condition
-            auto expr = llvm::cast<clang::Expr>(
-                ast_gen->GetOrCreateStmt(br->getCondition()));
-            // Negate if `br` jumps to `block` when `expr` is false
-            if (block == br->getSuccessor(1)) {
-              expr = CreateNotExpr(*ast_ctx, expr);
-            }
-            // Append `cond` to the predecessor condition via an `&&`
-            edge_cond = CreateAndExpr(*ast_ctx, edge_cond, expr);
-          }
-        } break;
-        // Handle returns
-        case llvm::Instruction::Ret:
-          break;
-
-        default:
-          LOG(FATAL) << "Unknown terminator instruction";
-          break;
-      }
-      // Append `cond` to reaching conditions of other predecessors via an `||`
-      if (edge_cond) {
-        cond = CreateOrExpr(*ast_ctx, cond, edge_cond);
+      auto pred_cond = reaching_conds[pred];
+      auto edge_cond = CreateEdgeCond(pred, block);
+      // Construct reaching condition from `pred` to `block` as
+      // `reach_cond[pred] && edge_cond(pred, block)`
+      if (pred_cond || edge_cond) {
+        auto conj_cond = CreateAndExpr(*ast_ctx, pred_cond, edge_cond);
+        // Append `conj_cond` to reaching conditions of other
+        // predecessors via an `||`
+        cond = CreateOrExpr(*ast_ctx, cond, conj_cond);
       }
     }
   }
   return cond;
 }
 
-clang::CompoundStmt *GenerateAST::GetOrCreateRegionAST(llvm::Region *region) {
-  auto &region_stmt = region_stmts[region];
-  if (!region_stmt) {
-    // Compute reaching conditions
-    for (auto block : rpo_walk) {
-      // Ignore non-region blocks
-      if (!IsRegionBlock(region, block)) {
-        continue;
-      }
-      // Create reaching conditions
-      GetOrCreateReachingCond(block);
+std::vector<clang::Stmt *> GenerateAST::CreateBasicBlockStmts(
+    llvm::BasicBlock *block) {
+  std::vector<clang::Stmt *> result;
+  for (auto &inst : *block) {
+    if (auto stmt = ast_gen->GetOrCreateStmt(&inst)) {
+      result.push_back(stmt);
     }
-    // Create a compound statement representing the body of the region
-    std::vector<clang::Stmt *> region_body;
-    for (auto block : rpo_walk) {
-      // Check if the block is a subregion entry
-      auto subregion = GetSubregion(region, block);
-      // Ignore blocks that are neither a subregion or a region block
-      if (!subregion && !IsRegionBlock(region, block)) {
-        continue;
-      }
-      // If the block is a head of a subregion, get the compound statement of
-      // the subregion otherwise create a new compound and gate it behind a
-      // reaching condition.
-      clang::CompoundStmt *compound = nullptr;
-      if (subregion) {
-        CHECK(compound = region_stmts[subregion]);
-      } else {
-        std::vector<clang::Stmt *> block_stmts;
-        for (auto &inst : *block) {
-          if (auto stmt = ast_gen->GetOrCreateStmt(&inst)) {
-            block_stmts.push_back(stmt);
-          }
-        }
-        // Create a compound, wrapping the block
-        compound = CreateCompoundStmt(*ast_ctx, block_stmts);
-      }
-      // The block is always reched if there's no condition, or the block is
-      // the entry
-      auto cond = reaching_conds[block];
-      if (!cond || block == region->getEntry()) {
-        cond = CreateTrueExpr(*ast_ctx);
-      }
-      // Gate the compound and store it
-      region_body.push_back(CreateIfStmt(*ast_ctx, cond, compound));
-    }
-    // Wrap the region and store
-    region_stmt = CreateCompoundStmt(*ast_ctx, region_body);
   }
-  // Voila, done.
-  return region_stmt;
+  return result;
+}
+
+std::vector<clang::Stmt *> GenerateAST::CreateRegionStmts(
+    llvm::Region *region) {
+  std::vector<clang::Stmt *> result;
+  for (auto block : rpo_walk) {
+    // Check if the block is a subregion entry
+    auto subregion = GetSubregion(region, block);
+    // Ignore blocks that are neither a subregion or a region block
+    if (!subregion && !IsRegionBlock(region, block)) {
+      continue;
+    }
+    // If the block is a head of a subregion, get the compound statement of
+    // the subregion otherwise create a new compound and gate it behind a
+    // reaching condition.
+    clang::CompoundStmt *compound = nullptr;
+    if (subregion) {
+      CHECK(compound = region_stmts[subregion]);
+    } else {
+      // Create a compound, wrapping the block
+      auto block_body = CreateBasicBlockStmts(block);
+      block_stmts[block] = CreateCompoundStmt(*ast_ctx, block_body);
+      compound = block_stmts[block];
+    }
+    // The block is always reached if there's no condition, or the block is
+    // the entry
+    auto cond = GetOrCreateReachingCond(block);
+    if (!cond || block == region->getEntry()) {
+      cond = CreateTrueExpr(*ast_ctx);
+    }
+    // Gate the compound and store it
+    result.push_back(CreateIfStmt(*ast_ctx, cond, compound));
+  }
+  return result;
 }
 
 clang::CompoundStmt *GenerateAST::StructureAcyclicRegion(llvm::Region *region) {
-  DLOG(INFO) << "Structuring acyclic region " << region->getNameStr();
-  for (auto block : rpo_walk) {
-    // Ignore non-region blocks
-    if (!IsRegionBlock(region, block)) {
-      continue;
-    }
-    // Create reaching conditions
-    GetOrCreateReachingCond(block);
-  }
-  // Create the region body
-  return GetOrCreateRegionAST(region);
+  DLOG(INFO) << "Region " << region->getNameStr() << " is acyclic";
+  auto region_body = CreateRegionStmts(region);
+  return CreateCompoundStmt(*ast_ctx, region_body);
 }
 
 clang::CompoundStmt *GenerateAST::StructureCyclicRegion(llvm::Region *region) {
-  DLOG(INFO) << "Structuring cyclic region " << region->getNameStr();
+  DLOG(INFO) << "Region " << region->getNameStr() << " is cyclic";
+  auto region_body = CreateRegionStmts(region);
   // Get the loop for which the entry block of the region is a header
   // loops->getLoopFor(region->getEntry())->print(llvm::errs());
   auto loop = region->outermostLoopInRegion(loops, region->getEntry());
@@ -282,17 +279,46 @@ clang::CompoundStmt *GenerateAST::StructureCyclicRegion(llvm::Region *region) {
   // a recognized natural loop. Cyclic regions may only be fragments
   // of a larger loop structure.
   if (loop) {
-    // Get exits from the loop
-    llvm::SmallVector<llvm::BasicBlock *, 2> exits;
-    loop->getExitingBlocks(exits);
-    // Create break statements for each edge from an exit to it's successor
-    // that is *not* a loop block
-    for (auto block : exits) {
-      DLOG(INFO) << "EXIT: " << remill::LLVMThingToString(&*block->begin());
+    // Get loop exit blocks
+    llvm::SmallVector<BBEdge, 2> exits;
+    loop->getExitEdges(exits);
+    for (auto edge : exits) {
+      auto from = const_cast<llvm::BasicBlock *>(edge.first);
+      auto to = const_cast<llvm::BasicBlock *>(edge.second);
+      // Create edge condition
+      auto cond = CreateEdgeCond(from, to);
+      // Find the statement corresponding to the exiting block
+      auto it =
+          std::find(region_body.begin(), region_body.end(), block_stmts[from]);
+      // Create a loop exiting `break` statement
+      auto exit_stmt = CreateIfStmt(*ast_ctx, cond, CreateBreakStmt(*ast_ctx));
+      // Insert it after the exiting block statement
+      region_body.insert(std::next(it), exit_stmt);
     }
   }
   // Structure the rest of the loop body as a acyclic region
-  return StructureAcyclicRegion(region);
+  return CreateCompoundStmt(*ast_ctx, region_body);
+}
+
+clang::CompoundStmt *GenerateAST::StructureRegion(llvm::Region *region) {
+  DLOG(INFO) << "Structuring region " << region->getNameStr();
+  auto &region_stmt = region_stmts[region];
+  if (!region_stmt) {
+    // Compute reaching conditions
+    for (auto block : rpo_walk) {
+      if (IsRegionBlock(region, block)) {
+        GetOrCreateReachingCond(block);
+      }
+    }
+    // Structure
+    region_stmt = loops->isLoopHeader(region->getEntry())
+                      ? StructureCyclicRegion(region)
+                      : StructureAcyclicRegion(region);
+  } else {
+    LOG(WARNING) << "Asking to re-structure region: " << region->getNameStr()
+                 << "; returning current region instead";
+  }
+  return region_stmt;
 }
 
 char GenerateAST::ID = 0;
@@ -351,9 +377,7 @@ bool GenerateAST::runOnModule(llvm::Module &module) {
         for (auto &subregion : *region) {
           POWalkSubRegions(&*subregion);
         }
-        region_stmts[region] = loops->isLoopHeader(region->getEntry())
-                                   ? StructureCyclicRegion(region)
-                                   : StructureAcyclicRegion(region);
+        StructureRegion(region);
       };
       // Call the above declared bad boy
       POWalkSubRegions(regions->getTopLevelRegion());
