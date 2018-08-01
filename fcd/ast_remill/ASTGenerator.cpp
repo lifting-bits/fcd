@@ -477,8 +477,8 @@ void ASTGenerator::visitLoadInst(llvm::LoadInst &inst) {
     auto ptr = inst.getPointerOperand();
     if (llvm::isa<llvm::AllocaInst>(ptr) ||
         llvm::isa<llvm::GlobalVariable>(ptr)) {
-      DLOG(INFO) << "Loading from an alloca";
-      if (auto var = llvm::dyn_cast<clang::VarDecl>(decls[ptr])) {
+      DLOG(INFO) << "Loading from a variable";
+      if (auto var = llvm::dyn_cast<clang::VarDecl>(GetOrCreateDecl(ptr))) {
         ref = CreateDeclRefExpr(ast_ctx, var);
       } else {
         LOG(FATAL) << "Referencing undeclared variable";
@@ -556,7 +556,7 @@ void ASTGenerator::visitCmpInst(llvm::CmpInst &inst) {
       case llvm::CmpInst::ICMP_EQ:
         cmp = CmpExpr(clang::BO_EQ);
         break;
-      
+
       case llvm::CmpInst::ICMP_NE:
         cmp = CmpExpr(clang::BO_NE);
         break;

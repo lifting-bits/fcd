@@ -91,6 +91,12 @@ static clang::IfStmt *CreateIfStmt(clang::ASTContext &ctx, clang::Expr *cond,
                     /* var=*/nullptr, cond, then);
 }
 
+static clang::WhileStmt *CreateWhileStmt(clang::ASTContext &ctx,
+                                         clang::Expr *cond, clang::Stmt *body) {
+  return new (ctx)
+      clang::WhileStmt(ctx, nullptr, cond, body, clang::SourceLocation());
+}
+
 static clang::BreakStmt *CreateBreakStmt(clang::ASTContext &ctx) {
   return new (ctx) clang::BreakStmt(clang::SourceLocation());
 }
@@ -248,8 +254,7 @@ std::vector<clang::Stmt *> GenerateAST::CreateRegionStmts(
     } else {
       // Create a compound, wrapping the block
       auto block_body = CreateBasicBlockStmts(block);
-      block_stmts[block] = CreateCompoundStmt(*ast_ctx, block_body);
-      compound = block_stmts[block];
+      compound = CreateCompoundStmt(*ast_ctx, block_body);
     }
     // The block is always reached if there's no condition, or the block is
     // the entry
@@ -258,7 +263,8 @@ std::vector<clang::Stmt *> GenerateAST::CreateRegionStmts(
       cond = CreateTrueExpr(*ast_ctx);
     }
     // Gate the compound and store it
-    result.push_back(CreateIfStmt(*ast_ctx, cond, compound));
+    block_stmts[block] = CreateIfStmt(*ast_ctx, cond, compound);
+    result.push_back(block_stmts[block]);
   }
   return result;
 }
@@ -279,9 +285,20 @@ clang::CompoundStmt *GenerateAST::StructureCyclicRegion(llvm::Region *region) {
   // a recognized natural loop. Cyclic regions may only be fragments
   // of a larger loop structure.
   if (loop) {
+    // Construct the initial loop body
+    std::vector<clang::Stmt *> loop_body;
+    for (auto block : rpo_walk) {
+      if (loop->contains(block)) {
+        auto stmt = block_stmts[block];
+        auto it = std::find(region_body.begin(), region_body.end(), stmt);
+        region_body.erase(it);
+        loop_body.push_back(stmt);
+      }
+    }
     // Get loop exit blocks
     llvm::SmallVector<BBEdge, 2> exits;
     loop->getExitEdges(exits);
+    // Insert `break` statements
     for (auto edge : exits) {
       auto from = const_cast<llvm::BasicBlock *>(edge.first);
       auto to = const_cast<llvm::BasicBlock *>(edge.second);
@@ -289,12 +306,19 @@ clang::CompoundStmt *GenerateAST::StructureCyclicRegion(llvm::Region *region) {
       auto cond = CreateEdgeCond(from, to);
       // Find the statement corresponding to the exiting block
       auto it =
-          std::find(region_body.begin(), region_body.end(), block_stmts[from]);
+          std::find(loop_body.begin(), loop_body.end(), block_stmts[from]);
       // Create a loop exiting `break` statement
-      auto exit_stmt = CreateIfStmt(*ast_ctx, cond, CreateBreakStmt(*ast_ctx));
+      std::vector<clang::Stmt *> break_stmt({CreateBreakStmt(*ast_ctx)});
+      auto exit_stmt = CreateIfStmt(*ast_ctx, cond,
+                                    CreateCompoundStmt(*ast_ctx, break_stmt));
       // Insert it after the exiting block statement
-      region_body.insert(std::next(it), exit_stmt);
+      loop_body.insert(std::next(it), exit_stmt);
     }
+    // Create the loop statement
+    auto loop_stmt = CreateWhileStmt(*ast_ctx, CreateTrueExpr(*ast_ctx),
+                                     CreateCompoundStmt(*ast_ctx, loop_body));
+    // Insert it at the beginning of the region body
+    region_body.insert(region_body.begin(), loop_stmt);
   }
   // Structure the rest of the loop body as a acyclic region
   return CreateCompoundStmt(*ast_ctx, region_body);
