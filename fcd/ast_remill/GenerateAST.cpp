@@ -220,6 +220,9 @@ clang::Expr *GenerateAST::GetOrCreateReachingCond(llvm::BasicBlock *block) {
         cond = CreateOrExpr(*ast_ctx, cond, conj_cond);
       }
     }
+    if (!cond) {
+      cond = CreateTrueExpr(*ast_ctx);
+    }
   }
   return cond;
 }
@@ -256,14 +259,10 @@ std::vector<clang::Stmt *> GenerateAST::CreateRegionStmts(
       auto block_body = CreateBasicBlockStmts(block);
       compound = CreateCompoundStmt(*ast_ctx, block_body);
     }
-    // The block is always reached if there's no condition, or the block is
-    // the entry
-    auto cond = GetOrCreateReachingCond(block);
-    if (!cond || block == region->getEntry()) {
-      cond = CreateTrueExpr(*ast_ctx);
-    }
-    // Gate the compound and store it
-    block_stmts[block] = CreateIfStmt(*ast_ctx, cond, compound);
+    // Gate the compound behind a reaching condition
+    block_stmts[block] =
+        CreateIfStmt(*ast_ctx, GetOrCreateReachingCond(block), compound);
+    // Store the compound
     result.push_back(block_stmts[block]);
   }
   return result;
@@ -289,10 +288,12 @@ clang::CompoundStmt *GenerateAST::StructureCyclicRegion(llvm::Region *region) {
     std::vector<clang::Stmt *> loop_body;
     for (auto block : rpo_walk) {
       if (loop->contains(block)) {
-        auto stmt = block_stmts[block];
-        auto it = std::find(region_body.begin(), region_body.end(), stmt);
-        region_body.erase(it);
-        loop_body.push_back(stmt);
+        if (IsRegionBlock(region, block) || IsSubregionEntry(region, block)) {
+          auto stmt = block_stmts[block];
+          auto it = std::find(region_body.begin(), region_body.end(), stmt);
+          region_body.erase(it);
+          loop_body.push_back(stmt);
+        }
       }
     }
     // Get loop exit blocks
