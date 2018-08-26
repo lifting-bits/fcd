@@ -23,7 +23,6 @@
 #include <llvm/Analysis/LoopInfo.h>
 
 #include <clang/AST/Expr.h>
-#include <clang/Basic/TargetInfo.h>
 
 #include <algorithm>
 #include <unordered_set>
@@ -348,36 +347,18 @@ clang::CompoundStmt *GenerateAST::StructureRegion(llvm::Region *region) {
 
 char GenerateAST::ID = 0;
 
-GenerateAST::GenerateAST(void) : ModulePass(GenerateAST::ID) {}
+GenerateAST::GenerateAST(clang::CompilerInstance &ins,
+                         fcd::IRToASTVisitor &ast_gen)
+    : ModulePass(GenerateAST::ID),
+      ast_ctx(&ins.getASTContext()),
+      ast_gen(&ast_gen) {}
 
 void GenerateAST::getAnalysisUsage(llvm::AnalysisUsage &usage) const {
-  usage.addRequired<llvm::DominatorTreeWrapperPass>();
   usage.addRequired<llvm::RegionInfoPass>();
   usage.addRequired<llvm::LoopInfoWrapperPass>();
 }
 
 bool GenerateAST::runOnModule(llvm::Module &module) {
-  clang::CompilerInstance ins;
-  auto inv = std::make_shared<clang::CompilerInvocation>();
-
-  const char *tmp[] = {""};
-  ins.setDiagnostics(ins.createDiagnostics(new clang::DiagnosticOptions).get());
-  clang::CompilerInvocation::CreateFromArgs(*inv, tmp, tmp,
-                                            ins.getDiagnostics());
-
-  inv->getTargetOpts().Triple = module.getTargetTriple();
-  ins.setInvocation(inv);
-  ins.setTarget(clang::TargetInfo::CreateTargetInfo(
-      ins.getDiagnostics(), ins.getInvocation().TargetOpts));
-
-  ins.createFileManager();
-  ins.createSourceManager(ins.getFileManager());
-  ins.createPreprocessor(clang::TU_Complete);
-  ins.createASTContext();
-
-  ast_ctx = &ins.getASTContext();
-  ast_gen = std::make_unique<ASTGenerator>(ins);
-
   for (auto &var : module.globals()) {
     ast_gen->VisitGlobalVar(var);
   }
@@ -414,13 +395,13 @@ bool GenerateAST::runOnModule(llvm::Module &module) {
     }
   }
 
-  // ins.getASTContext().getTranslationUnitDecl()->dump();
-  ins.getASTContext().getTranslationUnitDecl()->print(llvm::outs());
-
   return true;
 }
 
-llvm::ModulePass *createGenerateASTPass(void) { return new GenerateAST; }
+llvm::ModulePass *createGenerateASTPass(clang::CompilerInstance &ins,
+                                        fcd::IRToASTVisitor &gen) {
+  return new GenerateAST(ins, gen);
+}
 
 }  // namespace fcd
 

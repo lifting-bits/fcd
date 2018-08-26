@@ -19,6 +19,8 @@
 #include <llvm/Support/Signals.h>
 #include <llvm/Support/SourceMgr.h>
 
+#include <clang/Basic/TargetInfo.h>
+
 #include <list>
 #include <memory>
 #include <sstream>
@@ -27,6 +29,7 @@
 
 #include "remill/BC/Util.h"
 
+#include "fcd/ast_remill/IRToASTVisitor.h"
 #include "fcd/ast_remill/GenerateAST.h"
 
 #include "fcd/ast/ast_passes.h"
@@ -274,6 +277,26 @@ static bool RunPassPipeline(llvm::Module& module,
   return true;
 }
 
+static void InitCompilerInstance(llvm::Module& module,
+                                 clang::CompilerInstance& ins) {
+  auto inv = std::make_shared<clang::CompilerInvocation>();
+
+  const char* tmp[] = {""};
+  ins.setDiagnostics(ins.createDiagnostics(new clang::DiagnosticOptions).get());
+  clang::CompilerInvocation::CreateFromArgs(*inv, tmp, tmp,
+                                            ins.getDiagnostics());
+
+  inv->getTargetOpts().Triple = module.getTargetTriple();
+  ins.setInvocation(inv);
+  ins.setTarget(clang::TargetInfo::CreateTargetInfo(
+      ins.getDiagnostics(), ins.getInvocation().TargetOpts));
+
+  ins.createFileManager();
+  ins.createSourceManager(ins.getFileManager());
+  ins.createPreprocessor(clang::TU_Complete);
+  ins.createASTContext();
+}
+
 static bool GeneratePseudocode(llvm::Module& module,
                                llvm::raw_ostream& output) {
   LOG(INFO) << "Generating pseudo-C output";
@@ -294,10 +317,19 @@ static bool GeneratePseudocode(llvm::Module& module,
   // backend->addPass(new AstConsecutiveCombiner);
   // backend->addPass(new AstPrint(output, md::getIncludedFiles(module)));
   // backend->runOnModule(module);
-  
+
+  clang::CompilerInstance ins;
+  InitCompilerInstance(module, ins);
+
+  fcd::IRToASTVisitor gen(ins);
+
   llvm::legacy::PassManager pm;
-  pm.add(fcd::createGenerateASTPass());
+  pm.add(fcd::createGenerateASTPass(ins, gen));
   pm.run(module);
+
+  // ins.getASTContext().getTranslationUnitDecl()->dump();
+  ins.getASTContext().getTranslationUnitDecl()->print(llvm::outs());
+
   return true;
 }
 

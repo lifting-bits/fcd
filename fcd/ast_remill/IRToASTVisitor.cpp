@@ -23,7 +23,7 @@
 
 #include "remill/BC/Util.h"
 
-#include "fcd/ast_remill/ASTGenerator.h"
+#include "fcd/ast_remill/IRToASTVisitor.h"
 
 namespace {
 
@@ -178,15 +178,15 @@ static clang::BinaryOperator *CreateBinaryOperator(
 
 namespace fcd {
 
-ASTGenerator::ASTGenerator(clang::CompilerInstance &ins)
+IRToASTVisitor::IRToASTVisitor(clang::CompilerInstance &ins)
     : cc_ins(&ins), ast_ctx(cc_ins->getASTContext()) {}
 
-clang::FunctionDecl *ASTGenerator::GetFunctionDecl(llvm::Instruction *inst) {
+clang::FunctionDecl *IRToASTVisitor::GetFunctionDecl(llvm::Instruction *inst) {
   return llvm::dyn_cast<clang::FunctionDecl>(
       decls[inst->getParent()->getParent()]);
 }
 
-clang::Expr *ASTGenerator::GetOperandExpr(clang::DeclContext *decl_ctx,
+clang::Expr *IRToASTVisitor::GetOperandExpr(clang::DeclContext *decl_ctx,
                                           llvm::Value *val) {
   DLOG(INFO) << "Getting Expr for " << remill::LLVMThingToString(val);
   clang::Expr *result = nullptr;
@@ -225,7 +225,7 @@ clang::Expr *ASTGenerator::GetOperandExpr(clang::DeclContext *decl_ctx,
   return result;
 }
 
-clang::Stmt *ASTGenerator::GetOrCreateStmt(llvm::Value *val) {
+clang::Stmt *IRToASTVisitor::GetOrCreateStmt(llvm::Value *val) {
   auto &stmt = stmts[val];
   if (!stmt) {
     if (auto inst = llvm::dyn_cast<llvm::Instruction>(val)) {
@@ -237,7 +237,7 @@ clang::Stmt *ASTGenerator::GetOrCreateStmt(llvm::Value *val) {
   return stmt;
 }
 
-clang::Decl *ASTGenerator::GetOrCreateDecl(llvm::Value *val) {
+clang::Decl *IRToASTVisitor::GetOrCreateDecl(llvm::Value *val) {
   auto &decl = decls[val];
   if (!decl) {
     if (auto func = llvm::dyn_cast<llvm::Function>(val)) {
@@ -253,7 +253,7 @@ clang::Decl *ASTGenerator::GetOrCreateDecl(llvm::Value *val) {
   return decl;
 }
 
-void ASTGenerator::VisitGlobalVar(llvm::GlobalVariable &gvar) {
+void IRToASTVisitor::VisitGlobalVar(llvm::GlobalVariable &gvar) {
   DLOG(INFO) << "VisitGlobalVar: " << remill::LLVMThingToString(&gvar);
   auto &var = decls[&gvar];
   if (!var) {
@@ -272,7 +272,7 @@ void ASTGenerator::VisitGlobalVar(llvm::GlobalVariable &gvar) {
   }
 }
 
-void ASTGenerator::VisitFunctionDecl(llvm::Function &func) {
+void IRToASTVisitor::VisitFunctionDecl(llvm::Function &func) {
   auto name = func.getName().str();
   DLOG(INFO) << "VisitFunctionDecl: " << name;
   auto &decl = decls[&func];
@@ -312,7 +312,7 @@ void ASTGenerator::VisitFunctionDecl(llvm::Function &func) {
   }
 }
 
-// void ASTGenerator::VisitFunctionDefn(llvm::Function &func) {
+// void IRToASTVisitor::VisitFunctionDefn(llvm::Function &func) {
 //   auto name = func.getName().str();
 //   DLOG(INFO) << "VisitFunctionDefn: " << name;
 //   auto &compound = stmts[&func];
@@ -336,7 +336,7 @@ void ASTGenerator::VisitFunctionDecl(llvm::Function &func) {
 //   }
 // }
 
-// void ASTGenerator::VisitBasicBlock(llvm::BasicBlock &block) {
+// void IRToASTVisitor::VisitBasicBlock(llvm::BasicBlock &block) {
 //   auto name = block.hasName() ? block.getName().str() : "<no_name>";
 //   DLOG(INFO) << "VisitBasicBlock: " << name;
 //   auto &compound = stmts[&block];
@@ -355,7 +355,7 @@ void ASTGenerator::VisitFunctionDecl(llvm::Function &func) {
 //   }
 // }
 
-void ASTGenerator::visitCallInst(llvm::CallInst &inst) {
+void IRToASTVisitor::visitCallInst(llvm::CallInst &inst) {
   DLOG(INFO) << "visitCallInst: " << remill::LLVMThingToString(&inst);
   auto &callexpr = stmts[&inst];
   if (!callexpr) {
@@ -388,7 +388,7 @@ void ASTGenerator::visitCallInst(llvm::CallInst &inst) {
   }
 }
 
-void ASTGenerator::visitGetElementPtrInst(llvm::GetElementPtrInst &inst) {
+void IRToASTVisitor::visitGetElementPtrInst(llvm::GetElementPtrInst &inst) {
   DLOG(INFO) << "visitGetElementPtrInst: " << remill::LLVMThingToString(&inst);
   auto &expr = stmts[&inst];
   if (!expr) {
@@ -409,7 +409,7 @@ void ASTGenerator::visitGetElementPtrInst(llvm::GetElementPtrInst &inst) {
   }
 }
 
-void ASTGenerator::visitAllocaInst(llvm::AllocaInst &inst) {
+void IRToASTVisitor::visitAllocaInst(llvm::AllocaInst &inst) {
   DLOG(INFO) << "visitAllocaInst: " << remill::LLVMThingToString(&inst);
   auto &declstmt = stmts[&inst];
   if (!declstmt) {
@@ -434,7 +434,7 @@ void ASTGenerator::visitAllocaInst(llvm::AllocaInst &inst) {
   }
 }
 
-void ASTGenerator::visitStoreInst(llvm::StoreInst &inst) {
+void IRToASTVisitor::visitStoreInst(llvm::StoreInst &inst) {
   DLOG(INFO) << "visitStoreInst: " << remill::LLVMThingToString(&inst);
   auto &assign = stmts[&inst];
   if (!assign) {
@@ -468,7 +468,7 @@ void ASTGenerator::visitStoreInst(llvm::StoreInst &inst) {
   }
 }
 
-void ASTGenerator::visitLoadInst(llvm::LoadInst &inst) {
+void IRToASTVisitor::visitLoadInst(llvm::LoadInst &inst) {
   DLOG(INFO) << "visitLoadInst: " << remill::LLVMThingToString(&inst);
   auto &ref = stmts[&inst];
   if (!ref) {
@@ -491,7 +491,7 @@ void ASTGenerator::visitLoadInst(llvm::LoadInst &inst) {
   }
 }
 
-void ASTGenerator::visitReturnInst(llvm::ReturnInst &inst) {
+void IRToASTVisitor::visitReturnInst(llvm::ReturnInst &inst) {
   DLOG(INFO) << "visitReturnInst: " << remill::LLVMThingToString(&inst);
   auto &retstmt = stmts[&inst];
   if (!retstmt) {
@@ -506,7 +506,7 @@ void ASTGenerator::visitReturnInst(llvm::ReturnInst &inst) {
   }
 }
 
-void ASTGenerator::visitBinaryOperator(llvm::BinaryOperator &inst) {
+void IRToASTVisitor::visitBinaryOperator(llvm::BinaryOperator &inst) {
   DLOG(INFO) << "visitBinaryOperator: " << remill::LLVMThingToString(&inst);
   auto &binop = stmts[&inst];
   if (!binop) {
@@ -538,7 +538,7 @@ void ASTGenerator::visitBinaryOperator(llvm::BinaryOperator &inst) {
   }
 }
 
-void ASTGenerator::visitCmpInst(llvm::CmpInst &inst) {
+void IRToASTVisitor::visitCmpInst(llvm::CmpInst &inst) {
   DLOG(INFO) << "visitCmpInst: " << remill::LLVMThingToString(&inst);
   auto &cmp = stmts[&inst];
   if (!cmp) {
@@ -568,7 +568,7 @@ void ASTGenerator::visitCmpInst(llvm::CmpInst &inst) {
   }
 }
 
-// void ASTGenerator::visitInstruction(llvm::Instruction &inst) {
+// void IRToASTVisitor::visitInstruction(llvm::Instruction &inst) {
 //   DLOG(INFO) << "visitInstruction: " << remill::LLVMThingToString(&inst);
 // }
 

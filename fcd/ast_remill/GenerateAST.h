@@ -21,14 +21,14 @@
 #include <llvm/Analysis/RegionInfo.h>
 #include <llvm/IR/Module.h>
 
-#include "fcd/ast_remill/ASTGenerator.h"
+#include "fcd/ast_remill/IRToASTVisitor.h"
 
 namespace fcd {
 
 class GenerateAST : public llvm::ModulePass {
  private:
   clang::ASTContext *ast_ctx;
-  std::unique_ptr<ASTGenerator> ast_gen;
+  fcd::IRToASTVisitor *ast_gen;
   std::unordered_map<llvm::BasicBlock *, clang::Expr *> reaching_conds;
   std::unordered_map<llvm::BasicBlock *, clang::IfStmt *> block_stmts;
   std::unordered_map<llvm::Region *, clang::CompoundStmt *> region_stmts;
@@ -49,13 +49,14 @@ class GenerateAST : public llvm::ModulePass {
  public:
   static char ID;
 
-  GenerateAST(void);
+  GenerateAST(clang::CompilerInstance &ins, fcd::IRToASTVisitor &ast_gen);
 
   void getAnalysisUsage(llvm::AnalysisUsage &usage) const override;
   bool runOnModule(llvm::Module &module) override;
 };
 
-llvm::ModulePass *createGenerateASTPass(void);
+llvm::ModulePass *createGenerateASTPass(clang::CompilerInstance &ins,
+                                        fcd::IRToASTVisitor &ast_gen);
 }  // namespace fcd
 
 namespace llvm {

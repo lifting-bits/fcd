@@ -15,8 +15,8 @@
  */
 
 
-#ifndef FCD_AST_ASTGENERATOR_H_
-#define FCD_AST_ASTGENERATOR_H_
+#ifndef FCD_AST_IRTOASTVISITOR_H_
+#define FCD_AST_IRTOASTVISITOR_H_
 
 #include <llvm/IR/InstVisitor.h>
 
@@ -28,7 +28,7 @@
 
 namespace fcd {
 
-class ASTGenerator : public llvm::InstVisitor<ASTGenerator> {
+class IRToASTVisitor : public llvm::InstVisitor<IRToASTVisitor> {
  private:
   clang::CompilerInstance *cc_ins;
   clang::ASTContext &ast_ctx;
@@ -40,7 +40,7 @@ class ASTGenerator : public llvm::InstVisitor<ASTGenerator> {
   clang::Expr *GetOperandExpr(clang::DeclContext *decl_ctx, llvm::Value *val);
 
  public:
-  ASTGenerator(clang::CompilerInstance &ins);
+  IRToASTVisitor(clang::CompilerInstance &ins);
   
   clang::Stmt *GetOrCreateStmt(llvm::Value *val);
   clang::Decl *GetOrCreateDecl(llvm::Value *val);
@@ -61,4 +61,4 @@ class ASTGenerator : public llvm::InstVisitor<ASTGenerator> {
 
 }  // namespace fcd
 
-#endif  // FCD_AST_ASTGENERATOR_H_
+#endif  // FCD_AST_IRTOASTVISITOR_H_
