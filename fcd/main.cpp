@@ -30,6 +30,7 @@
 #include "remill/BC/Util.h"
 
 #include "fcd/ast_remill/IRToASTVisitor.h"
+#include "fcd/ast_remill/SimplifyConditions.h"
 #include "fcd/ast_remill/GenerateAST.h"
 
 #include "fcd/ast/ast_passes.h"
@@ -325,6 +326,7 @@ static bool GeneratePseudocode(llvm::Module& module,
 
   llvm::legacy::PassManager pm;
   pm.add(fcd::createGenerateASTPass(ins, gen));
+  pm.add(fcd::createSimplifyConditionsPass(ins, gen));
   pm.run(module);
 
   // ins.getASTContext().getTranslationUnitDecl()->dump();

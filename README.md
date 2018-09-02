@@ -35,6 +35,7 @@ Most of Fcd+Remill's dependencies can be provided by the [cxx-common](https://gi
 | [Remill](https://github.com/trailofbits/remill) | Latest |
 | [Python](https://www.python.org/) | 2.7 |
 | [Zlib](https://www.zlib.net/) | Latest |
+| [Z3](https://github.com/Z3Prover/z3) | 4.7.1 |
 | Unzip | Latest |
 
 ## Getting and Building the Code
@@ -42,6 +43,8 @@ Most of Fcd+Remill's dependencies can be provided by the [cxx-common](https://gi
 ### On Linux
 
 First, update aptitude and get install the baseline dependencies.
+
+TODO(msurovic): z3 installation
 
 ```shell
 sudo apt-get update
