@@ -19,22 +19,29 @@
 
 #include <llvm/IR/Module.h>
 
+#include <z3++.h>
+
 #include "fcd/ast_remill/IRToASTVisitor.h"
-#include "fcd/ast_remill/ASTToZ3ExprVisitor.h"
+#include "fcd/ast_remill/Z3ConvVisitor.h"
 
 namespace fcd {
 
-class SimplifyConditions : public llvm::ModulePass {
+class SimplifyConditions
+    : public llvm::ModulePass,
+      public clang::RecursiveASTVisitor<SimplifyConditions> {
  private:
   clang::ASTContext *ast_ctx;
   fcd::IRToASTVisitor *ast_gen;
-  std::unique_ptr<fcd::ASTToZ3ExprVisitor> z3_gen;
-  
+  std::unique_ptr<z3::context> z3_ctx;
+  std::unique_ptr<fcd::Z3ConvVisitor> z3_gen;
+
  public:
   static char ID;
 
   SimplifyConditions(clang::CompilerInstance &ins,
                      fcd::IRToASTVisitor &ast_gen);
+
+  bool VisitIfStmt(clang::IfStmt *stmt);
 
   bool runOnModule(llvm::Module &module) override;
 };

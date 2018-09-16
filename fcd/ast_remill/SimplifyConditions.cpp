@@ -25,10 +25,16 @@ SimplifyConditions::SimplifyConditions(clang::CompilerInstance &ins,
     : ModulePass(SimplifyConditions::ID),
       ast_ctx(&ins.getASTContext()),
       ast_gen(&ast_gen),
-      z3_gen(new fcd::ASTToZ3ExprVisitor(ast_ctx)) {}
+      z3_ctx(new z3::context()),
+      z3_gen(new fcd::Z3ConvVisitor(ast_ctx, z3_ctx.get())) {}
+
+bool SimplifyConditions::VisitIfStmt(clang::IfStmt *stmt) {
+  z3_gen->GetOrCreateZ3Expr(stmt->getCond());
+  return true;
+}
 
 bool SimplifyConditions::runOnModule(llvm::Module &module) {
-  z3_gen->TraverseDecl(ast_ctx->getTranslationUnitDecl());
+  TraverseDecl(ast_ctx->getTranslationUnitDecl());
   return true;
 }
 
