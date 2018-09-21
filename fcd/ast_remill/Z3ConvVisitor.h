@@ -31,12 +31,12 @@ class Z3ConvVisitor
     clang::ASTContext *ast_ctx;
     z3::context *z3_ctx;
     
-    std::unordered_map<clang::Expr *, z3::expr *> z3_exprs;
-    std::unordered_map<z3::expr *, clang::Expr *> c_exprs;
+    std::unordered_map<clang::Expr *, z3::expr> z3_exprs;
+    std::unordered_map<unsigned, clang::Expr *> c_exprs;
 
  public:
-    z3::expr *GetOrCreateZ3Expr(clang::Expr *expr);
-    clang::Expr *GetOrCreateCExpr(z3::expr *expr);
+    z3::expr GetOrCreateZ3Expr(clang::Expr *expr);
+    clang::Expr *GetOrCreateCExpr(z3::expr expr);
 
     Z3ConvVisitor(clang::ASTContext *c_ctx, z3::context *z_ctx);
 

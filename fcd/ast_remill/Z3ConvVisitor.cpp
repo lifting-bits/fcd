@@ -23,8 +23,38 @@ namespace fcd {
 
 namespace {
 
-static z3::sort GetZ3Sort(z3::context &ctx, clang::QualType type) {
-  return ctx.bool_sort();
+static z3::sort GetZ3Sort(z3::context &ctx, clang::QualType &type) {
+  auto bitwidth = ctx.getTypeSize(type);
+  // Booleans
+  if (type->isBooleanType()) {
+    return ctx.bool_sort();
+  }
+  // Floating points
+  if (type->isRealFloatingType()) {
+    switch (bitwidth) {
+      case 16:
+        return z3::to_expr(ctx, Z3_mk_fpa_sort_16(ctx));
+        break;
+
+      case 32:
+        return z3::to_expr(ctx, Z3_mk_fpa_sort_32(ctx));
+        break;
+
+      case 64:
+        return z3::to_expr(ctx, Z3_mk_fpa_sort_64(ctx));
+        break;
+
+      case 128:
+        return z3::to_expr(ctx, Z3_mk_fpa_sort_128(ctx));
+        break;
+
+      default:
+        LOG(FATAL) << "Unsupported floating-point bitwidth!";
+        break;
+    }
+  }
+  // Default to bitvectors
+  return z3::to_expr(ctx, Z3_mk_bv_sort(ctx, bitwidth));
 }
 
 }  // namespace
