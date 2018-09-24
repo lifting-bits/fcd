@@ -20,6 +20,7 @@
 #include <clang/AST/RecursiveASTVisitor.h>
 
 #include <z3++.h>
+#include <z3_api.h>
 
 #include <unordered_map>
 
@@ -31,10 +32,11 @@ class Z3ConvVisitor
     clang::ASTContext *ast_ctx;
     z3::context *z3_ctx;
     
-    std::unordered_map<clang::Expr *, z3::expr> z3_exprs;
-    std::unordered_map<unsigned, clang::Expr *> c_exprs;
+    std::unordered_map<clang::Expr *, Z3_ast> z3_exprs;
+    std::unordered_map<Z3_ast, clang::Expr *> c_exprs;
 
  public:
+    z3::sort GetZ3Sort(clang::QualType &type);
     z3::expr GetOrCreateZ3Expr(clang::Expr *expr);
     clang::Expr *GetOrCreateCExpr(z3::expr expr);
 

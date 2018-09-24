@@ -21,31 +21,36 @@
 
 namespace fcd {
 
-namespace {
+// namespace {
 
-static z3::sort GetZ3Sort(z3::context &ctx, clang::QualType &type) {
-  auto bitwidth = ctx.getTypeSize(type);
+// }  // namespace
+
+Z3ConvVisitor::Z3ConvVisitor(clang::ASTContext *c_ctx, z3::context *z_ctx)
+    : ast_ctx(c_ctx), z3_ctx(z_ctx) {}
+
+z3::sort Z3ConvVisitor::GetZ3Sort(clang::QualType &type) {
+  auto bitwidth = ast_ctx->getTypeSize(type);
   // Booleans
   if (type->isBooleanType()) {
-    return ctx.bool_sort();
+    return z3_ctx->bool_sort();
   }
   // Floating points
   if (type->isRealFloatingType()) {
     switch (bitwidth) {
       case 16:
-        return z3::to_expr(ctx, Z3_mk_fpa_sort_16(ctx));
+        return z3::to_sort(*z3_ctx, Z3_mk_fpa_sort_16(*z3_ctx));
         break;
 
       case 32:
-        return z3::to_expr(ctx, Z3_mk_fpa_sort_32(ctx));
+        return z3::to_sort(*z3_ctx, Z3_mk_fpa_sort_32(*z3_ctx));
         break;
 
       case 64:
-        return z3::to_expr(ctx, Z3_mk_fpa_sort_64(ctx));
+        return z3::to_sort(*z3_ctx, Z3_mk_fpa_sort_64(*z3_ctx));
         break;
 
       case 128:
-        return z3::to_expr(ctx, Z3_mk_fpa_sort_128(ctx));
+        return z3::to_sort(*z3_ctx, Z3_mk_fpa_sort_128(*z3_ctx));
         break;
 
       default:
@@ -54,23 +59,18 @@ static z3::sort GetZ3Sort(z3::context &ctx, clang::QualType &type) {
     }
   }
   // Default to bitvectors
-  return z3::to_expr(ctx, Z3_mk_bv_sort(ctx, bitwidth));
+  return z3::to_sort(*z3_ctx, Z3_mk_bv_sort(*z3_ctx, bitwidth));
 }
 
-}  // namespace
-
-Z3ConvVisitor::Z3ConvVisitor(clang::ASTContext *c_ctx, z3::context *z_ctx)
-    : ast_ctx(c_ctx), z3_ctx(z_ctx) {}
-
-z3::expr *Z3ConvVisitor::GetOrCreateZ3Expr(clang::Expr *expr) {
-  auto &z3_expr = z3_exprs[expr];
-  if (!z3_expr) {
+z3::expr Z3ConvVisitor::GetOrCreateZ3Expr(clang::Expr *expr) {
+  auto &z3_ast = z3_exprs[expr];
+  if (!z3_ast) {
     TraverseStmt(expr);
   }
-  return z3_expr;
+  return z3::to_expr(*z3_ctx, z3_ast);
 }
 
-clang::Expr *Z3ConvVisitor::GetOrCreateCExpr(z3::expr *expr) { return nullptr; }
+clang::Expr *Z3ConvVisitor::GetOrCreateCExpr(z3::expr expr) { return nullptr; }
 
 bool Z3ConvVisitor::VisitUnaryOperator(clang::UnaryOperator *op) {
   op->dump();
