@@ -20,7 +20,6 @@
 #include <clang/AST/RecursiveASTVisitor.h>
 
 #include <z3++.h>
-#include <z3_api.h>
 
 #include <unordered_map>
 
@@ -32,22 +31,29 @@ class Z3ConvVisitor
     clang::ASTContext *ast_ctx;
     z3::context *z3_ctx;
     
-    std::unordered_map<clang::Expr *, Z3_ast> z3_exprs;
-    std::unordered_map<Z3_ast, clang::Expr *> c_exprs;
+    z3::expr_vector z3_expr_vec;
+
+    std::unordered_map<clang::Expr *, unsigned> z3_expr_map;
+    std::unordered_map<unsigned, clang::Expr *> c_expr_map;
+    std::unordered_map<clang::Decl *, unsigned> c_decl_ref_cnts;
+    
+    void InsertZ3Expr(clang::Expr *c_exp, z3::expr z3_expr);
+    z3::expr GetZ3Expr(clang::Expr *c_expr);
+    
+    z3::sort GetZ3Sort(clang::QualType type);
+    z3::expr Z3BoolCast(z3::expr expr);
 
  public:
-    z3::sort GetZ3Sort(clang::QualType &type);
-    z3::expr GetOrCreateZ3Expr(clang::Expr *expr);
-    clang::Expr *GetOrCreateCExpr(z3::expr expr);
+    z3::expr GetOrCreateZ3Expr(clang::Expr *c_expr);
+    clang::Expr *GetOrCreateCExpr(z3::expr z3_expr);
 
     Z3ConvVisitor(clang::ASTContext *c_ctx, z3::context *z_ctx);
-
     bool shouldTraversePostOrder() { return true; }
 
-    bool VisitUnaryOperator(clang::UnaryOperator *op);
-    bool VisitBinaryOperator(clang::BinaryOperator *op);
-    bool VisitDeclRefExpr(clang::DeclRefExpr *ref);
-    bool VisitIntegerLiteral(clang::IntegerLiteral *lit);
+    bool VisitUnaryOperator(clang::UnaryOperator *c_op);
+    bool VisitBinaryOperator(clang::BinaryOperator *c_op);
+    bool VisitDeclRefExpr(clang::DeclRefExpr *c_ref);
+    bool VisitIntegerLiteral(clang::IntegerLiteral *c_lit);
 };
 
 }  // namespace fcd
