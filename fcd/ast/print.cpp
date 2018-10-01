@@ -440,7 +440,7 @@ void StatementPrintVisitor::visitNumeric(const NumericExpression& numeric)
 	// 2- the parent expression is is a bitwise operator and the number is greater than 9.
 	if (auto nary = dyn_cast_or_null<NAryOperatorExpression>(parentExpression))
 	{
-		if (numeric.ui64 > 9)
+		if (numeric.value.ugt(9))
 		{
 			switch (nary->getType())
 			{
@@ -461,11 +461,11 @@ void StatementPrintVisitor::visitNumeric(const NumericExpression& numeric)
 	
 	if (formatAsHex)
 	{
-		(os << "0x").write_hex(numeric.ui64);
+		os << "0x" << numeric.value.toString(16, false);
 	}
 	else
 	{
-		os << numeric.si64;
+        os << numeric.value.toString(10, true);
 	}
 }
 

@@ -167,8 +167,8 @@ public:
 	{
 		if (auto constantInt = dyn_cast<ConstantInt>(&constant))
 		{
-			assert(constantInt->getValue().ule(numeric_limits<uint64_t>::max()));
-			return ctx.numeric(ctx.getIntegerType(false, (unsigned short)constantInt->getBitWidth()), constantInt->getLimitedValue());
+			assert(constantInt->getBitWidth() <= numeric_limits<unsigned short>::max());
+			return ctx.numeric(ctx.getIntegerType(false, (unsigned short)constantInt->getBitWidth()), constantInt->getValue());
 		}
 		
 		if (auto expression = dyn_cast<ConstantExpr>(&constant))
@@ -311,13 +311,8 @@ public:
 			{
 				// special case for a + -const
 				const auto& type = constant->getExpressionType(ctx);
-				unsigned idleBits = 64 - type.getBits();
-				int64_t signedValue = (constant->si64 << idleBits) >> idleBits;
-				if (signedValue < 0)
-				{
-					// I'm pretty sure that we don't need to check for the minimum value for that type
-					// since a + INT_MIN is the same as a - INT_MIN.
-					auto positiveRight = ctx.numeric(type, static_cast<uint64_t>(-signedValue));
+                if (constant->value.isNegative()) {
+					auto positiveRight = ctx.numeric(type, -constant->value);
 					return ctx.nary(NAryOperatorExpression::Subtract, left, positiveRight);
 				}
 			}

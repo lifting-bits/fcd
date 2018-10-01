@@ -17,6 +17,7 @@
 #include "not_null.h"
 
 #include <llvm/ADT/iterator_range.h>
+#include <llvm/ADT/APInt.h>
 
 #include <string>
 
@@ -312,29 +313,20 @@ public:
 struct NumericExpression final : public Expression
 {
 	const IntegerExpressionType& expressionType;
-	union
-	{
-		int64_t si64;
-		uint64_t ui64;
-	};
+    llvm::APInt value;
 	
 	static bool classof(const ExpressionUser* node)
 	{
 		return node->getUserType() == Numeric;
 	}
 	
-	NumericExpression(AstContext& ctx, unsigned uses, const IntegerExpressionType& type, uint64_t ui)
-	: Expression(Numeric, ctx, uses), expressionType(type), ui64(ui)
+	NumericExpression(AstContext& ctx, unsigned uses, const IntegerExpressionType& type, llvm::APInt val)
+	: Expression(Numeric, ctx, uses), expressionType(type), value(val)
 	{
 		assert(uses == 0);
+        assert(value.getBitWidth() == expressionType.getBits());
 	}
-	
-	NumericExpression(AstContext& ctx, unsigned uses, const IntegerExpressionType& type, int64_t si)
-	: Expression(Numeric, ctx, uses), expressionType(type), si64(si)
-	{
-		assert(uses == 0);
-	}
-	
+		
 	virtual const IntegerExpressionType& getExpressionType(AstContext&) const override { return expressionType; }
 	virtual bool operator==(const Expression& that) const override;
 };
