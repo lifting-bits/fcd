@@ -147,6 +147,14 @@ bool Z3ConvVisitor::VisitBinaryOperator(clang::BinaryOperator *c_op) {
         InsertZ3Expr(c_op, lhs == rhs);
         break;
 
+      case clang::BO_NE:
+        InsertZ3Expr(c_op, lhs != rhs);
+        break;
+
+      case clang::BO_Rem:
+        InsertZ3Expr(c_op, z3::srem(lhs, rhs));
+        break;
+
       default:
         LOG(FATAL) << "Unknown clang::BinaryOperator operation";
         break;
@@ -161,9 +169,9 @@ bool Z3ConvVisitor::VisitDeclRefExpr(clang::DeclRefExpr *c_ref) {
   auto ref_name = ref_decl->getNameAsString();
   DLOG(INFO) << "VisitDeclRefExpr: " << ref_name;
   if (z3_expr_map.find(c_ref) == z3_expr_map.end()) {
-    auto z3_name = ref_name + "_" + std::to_string(c_decl_ref_cnts[ref_decl]++);
     auto z3_sort = GetZ3Sort(c_ref->getType());
-    InsertZ3Expr(c_ref, z3_ctx->constant(z3_name.c_str(), z3_sort));
+    auto z3_const = z3_ctx->constant(ref_name.c_str(), z3_sort);
+    InsertZ3Expr(c_ref, z3_const);
   }
   return true;
 }

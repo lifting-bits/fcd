@@ -17,6 +17,8 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
+// #include <z3.h>
+
 #include "fcd/ast_remill/SimplifyConditions.h"
 
 namespace fcd {
@@ -32,7 +34,21 @@ SimplifyConditions::SimplifyConditions(clang::CompilerInstance &ins,
       z3_gen(new fcd::Z3ConvVisitor(ast_ctx, z3_ctx.get())) {}
 
 bool SimplifyConditions::VisitIfStmt(clang::IfStmt *stmt) {
-  z3_gen->GetOrCreateZ3Expr(stmt->getCond());
+  auto expr = z3_gen->GetOrCreateZ3Expr(stmt->getCond());
+  z3::goal cond(*z3_ctx);
+  cond.add(expr);
+  // Custom Z3 bitvector predicate simplifier
+  auto simplify =
+      // Simplify boolean structure with AIGs
+      z3::tactic(*z3_ctx, "aig") &
+      // Propagate bounds over bit-vectors
+      z3::tactic(*z3_ctx, "propagate-bv-bounds") &
+      // Tseitin transformation
+      z3::tactic(*z3_ctx, "tseitin-cnf") &
+      // Contextual simplification
+      z3::tactic(*z3_ctx, "ctx-simplify");
+  // Apply on condition
+  auto app = simplify(goal);
   return true;
 }
 
@@ -45,4 +61,4 @@ llvm::ModulePass *createSimplifyConditionsPass(clang::CompilerInstance &ins,
                                                fcd::IRToASTVisitor &gen) {
   return new SimplifyConditions(ins, gen);
 }
-}
+}  // namespace fcd

@@ -35,7 +35,6 @@ class Z3ConvVisitor
 
     std::unordered_map<clang::Expr *, unsigned> z3_expr_map;
     std::unordered_map<unsigned, clang::Expr *> c_expr_map;
-    std::unordered_map<clang::Decl *, unsigned> c_decl_ref_cnts;
     
     void InsertZ3Expr(clang::Expr *c_exp, z3::expr z3_expr);
     z3::expr GetZ3Expr(clang::Expr *c_expr);
