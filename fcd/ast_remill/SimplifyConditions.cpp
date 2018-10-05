@@ -17,8 +17,6 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
-// #include <z3.h>
-
 #include "fcd/ast_remill/SimplifyConditions.h"
 
 namespace fcd {
@@ -48,7 +46,9 @@ bool SimplifyConditions::VisitIfStmt(clang::IfStmt *stmt) {
       // Contextual simplification
       z3::tactic(*z3_ctx, "ctx-simplify");
   // Apply on condition
-  auto app = simplify(goal);
+  auto app = simplify(cond);
+  CHECK(app.size() == 1) << "Unexpected multiple goals in application!";
+  z3_gen->GetOrCreateCExpr(app[0].as_expr());
   return true;
 }
 

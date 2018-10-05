@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#define GOOGLE_STRIP_LOG 1
+// #define GOOGLE_STRIP_LOG 1
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -23,9 +23,9 @@
 
 namespace fcd {
 
-// namespace {
+namespace {
 
-// }  // namespace
+}  // namespace
 
 Z3ConvVisitor::Z3ConvVisitor(clang::ASTContext *c_ctx, z3::context *z_ctx)
     : ast_ctx(c_ctx), z3_ctx(z_ctx), z3_expr_vec(*z3_ctx) {}
@@ -94,6 +94,49 @@ z3::expr Z3ConvVisitor::Z3BoolCast(z3::expr expr) {
   }
 }
 
+void Z3ConvVisitor::VisitZ3Expr(z3::expr z3_expr) {
+  if (z3_expr.is_app()) {
+    for (unsigned i = 0; i < z3_expr.num_args(); ++i) {
+      VisitZ3Expr(z3_expr.arg(i));
+    }
+    switch (z3_expr.decl().arity()) {
+      case 0:
+        VisitConstant(z3_expr);
+        break;
+
+      case 1:
+        VisitUnaryApp(z3_expr);
+        break;
+      
+      case 2:
+        VisitBinaryApp(z3_expr);
+        break;
+
+      default:
+        LOG(FATAL) << "Unexpected Z3 operation!";
+        break;
+    }
+  } else if (z3_expr.is_quantifier()) {
+    LOG(FATAL) << "Unexpected Z3 quantifier!";
+  } else {
+    LOG(FATAL) << "Unexpected Z3 variable!";
+  }
+}
+
+void Z3ConvVisitor::InsertCExpr(z3::expr z3_expr, clang::Expr *c_expr) {
+  auto hash = z3_expr.hash();
+  auto iter = c_expr_map.find(hash);
+  CHECK(iter == c_expr_map.end());
+  c_expr_map[hash] = c_expr;
+}
+
+clang::Expr *Z3ConvVisitor::GetCExpr(z3::expr z3_expr) {
+  auto hash = z3_expr.hash();
+  auto iter = c_expr_map.find(hash);
+  CHECK(iter != c_expr_map.end());
+  return c_expr_map[hash];
+}
+
 // Retrieves or creates`z3::expr`s from `clang::Expr`.
 z3::expr Z3ConvVisitor::GetOrCreateZ3Expr(clang::Expr *c_expr) {
   if (z3_expr_map.find(c_expr) == z3_expr_map.end()) {
@@ -103,7 +146,12 @@ z3::expr Z3ConvVisitor::GetOrCreateZ3Expr(clang::Expr *c_expr) {
 }
 
 // Retrieves or creates `clang::Expr` from `z3::expr`.
-clang::Expr *Z3ConvVisitor::GetOrCreateCExpr(z3::expr expr) { return nullptr; }
+clang::Expr *Z3ConvVisitor::GetOrCreateCExpr(z3::expr z3_expr) {
+  if (c_expr_map.find(z3_expr.hash()) == c_expr_map.end()) {
+    VisitZ3Expr(z3_expr);
+  }
+  return GetCExpr(z3_expr);
+}
 
 // Translates clang unary operators expressions to Z3 equivalents.
 bool Z3ConvVisitor::VisitUnaryOperator(clang::UnaryOperator *c_op) {
@@ -119,7 +167,7 @@ bool Z3ConvVisitor::VisitUnaryOperator(clang::UnaryOperator *c_op) {
         break;
 
       default:
-        LOG(FATAL) << "Unknown clang::UnaryOperator operation";
+        LOG(FATAL) << "Unknown clang::UnaryOperator operation!";
         break;
     }
   }
@@ -156,7 +204,7 @@ bool Z3ConvVisitor::VisitBinaryOperator(clang::BinaryOperator *c_op) {
         break;
 
       default:
-        LOG(FATAL) << "Unknown clang::BinaryOperator operation";
+        LOG(FATAL) << "Unknown clang::BinaryOperator operation!";
         break;
     }
   }
@@ -185,6 +233,18 @@ bool Z3ConvVisitor::VisitIntegerLiteral(clang::IntegerLiteral *c_lit) {
     InsertZ3Expr(c_lit, z3_ctx->num_val(lit_val, z3_sort));
   }
   return true;
+}
+
+void Z3ConvVisitor::VisitConstant(z3::expr z3_const) {
+  DLOG(INFO) << "VisitConstant: " << z3_const;
+}
+
+void Z3ConvVisitor::VisitUnaryApp(z3::expr z3_op) {
+  DLOG(INFO) << "VisitUnaryApp: " << z3_op;
+}
+
+void Z3ConvVisitor::VisitBinaryApp(z3::expr z3_op) {
+  DLOG(INFO) << "VisitBinaryApp: " << z3_op;
 }
 
 }  // namespace fcd

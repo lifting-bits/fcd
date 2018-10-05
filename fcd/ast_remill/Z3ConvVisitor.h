@@ -36,8 +36,13 @@ class Z3ConvVisitor
     std::unordered_map<clang::Expr *, unsigned> z3_expr_map;
     std::unordered_map<unsigned, clang::Expr *> c_expr_map;
     
-    void InsertZ3Expr(clang::Expr *c_exp, z3::expr z3_expr);
+    void InsertZ3Expr(clang::Expr *c_expr, z3::expr z3_expr);
     z3::expr GetZ3Expr(clang::Expr *c_expr);
+
+    void InsertCExpr(z3::expr z3_expr, clang::Expr *c_expr);
+    clang::Expr *GetCExpr(z3::expr z3_expr);
+    
+    void VisitZ3Expr(z3::expr z3_expr);
     
     z3::sort GetZ3Sort(clang::QualType type);
     z3::expr Z3BoolCast(z3::expr expr);
@@ -46,13 +51,17 @@ class Z3ConvVisitor
     z3::expr GetOrCreateZ3Expr(clang::Expr *c_expr);
     clang::Expr *GetOrCreateCExpr(z3::expr z3_expr);
 
-    Z3ConvVisitor(clang::ASTContext *c_ctx, z3::context *z_ctx);
+    Z3ConvVisitor(clang::ASTContext *c_ctx, z3::context *z3_ctx);
     bool shouldTraversePostOrder() { return true; }
 
     bool VisitUnaryOperator(clang::UnaryOperator *c_op);
     bool VisitBinaryOperator(clang::BinaryOperator *c_op);
     bool VisitDeclRefExpr(clang::DeclRefExpr *c_ref);
     bool VisitIntegerLiteral(clang::IntegerLiteral *c_lit);
+
+    void VisitConstant(z3::expr z3_const);
+    void VisitUnaryApp(z3::expr z3_op);
+    void VisitBinaryApp(z3::expr z3_op);
 };
 
 }  // namespace fcd
