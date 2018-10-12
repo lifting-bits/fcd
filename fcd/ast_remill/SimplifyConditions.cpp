@@ -48,7 +48,7 @@ bool SimplifyConditions::VisitIfStmt(clang::IfStmt *stmt) {
   // Apply on condition
   auto app = simplify(cond);
   CHECK(app.size() == 1) << "Unexpected multiple goals in application!";
-  z3_gen->GetOrCreateCExpr(app[0].as_expr());
+  stmt->setCond(z3_gen->GetOrCreateCExpr(app[0].as_expr()));
   return true;
 }
 

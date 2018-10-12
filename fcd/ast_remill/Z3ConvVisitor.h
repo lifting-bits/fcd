@@ -32,24 +32,28 @@ class Z3ConvVisitor
     z3::context *z3_ctx;
     
     z3::expr_vector z3_expr_vec;
-
+    // Expression maps
     std::unordered_map<clang::Expr *, unsigned> z3_expr_map;
     std::unordered_map<unsigned, clang::Expr *> c_expr_map;
+    // Z3 constant to C variable map
+    std::unordered_map<std::string, clang::ValueDecl *> c_var_map;
     
     void InsertZ3Expr(clang::Expr *c_expr, z3::expr z3_expr);
     z3::expr GetZ3Expr(clang::Expr *c_expr);
 
     void InsertCExpr(z3::expr z3_expr, clang::Expr *c_expr);
     clang::Expr *GetCExpr(z3::expr z3_expr);
+    clang::ValueDecl *GetCVar(std::string var_name);
     
     void VisitZ3Expr(z3::expr z3_expr);
     
-    z3::sort GetZ3Sort(clang::QualType type);
     z3::expr Z3BoolCast(z3::expr expr);
 
  public:
     z3::expr GetOrCreateZ3Expr(clang::Expr *c_expr);
     clang::Expr *GetOrCreateCExpr(z3::expr z3_expr);
+
+    void DeclareCVar(clang::ValueDecl *c_decl);
 
     Z3ConvVisitor(clang::ASTContext *c_ctx, z3::context *z3_ctx);
     bool shouldTraversePostOrder() { return true; }

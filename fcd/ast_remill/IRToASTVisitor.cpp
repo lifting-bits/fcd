@@ -31,9 +31,7 @@ static clang::QualType GetQualType(clang::ASTContext &ctx, llvm::Type *type,
                                    bool constant = false) {
   // DLOG(INFO) << "GetQualType: " << (constant ? "constant " : "")
   //            << remill::LLVMThingToString(type);
-
   clang::QualType result;
-
   switch (type->getTypeID()) {
     case llvm::Type::VoidTyID:
       result = ctx.VoidTy;
@@ -54,23 +52,7 @@ static clang::QualType GetQualType(clang::ASTContext &ctx, llvm::Type *type,
     case llvm::Type::IntegerTyID: {
       auto size = type->getIntegerBitWidth();
       CHECK(size > 0) << "Integer bit width has to be greater than 0";
-      if (size == 1) {
-        result = ctx.BoolTy;
-      } else if (size <= 8) {
-        result = ctx.UnsignedCharTy;
-      } else if (size <= 16) {
-        result = ctx.UnsignedShortTy;
-      } else if (size <= 32) {
-        result = ctx.UnsignedLongTy;
-      } else if (size <= 64) {
-        result = ctx.UnsignedLongLongTy;
-      } else if (size <= 128) {
-        result = ctx.UnsignedInt128Ty;
-      } else {
-        LOG(WARNING)
-            << "Integer bit width greater than 128; Returning UnsignedInt128Ty";
-        result = ctx.UnsignedInt128Ty;
-      }
+      result = ctx.getIntTypeForBitwidth(size, 0);
     } break;
 
     case llvm::Type::FunctionTyID: {
