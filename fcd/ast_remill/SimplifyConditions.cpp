@@ -48,11 +48,13 @@ bool SimplifyConditions::VisitIfStmt(clang::IfStmt *stmt) {
   // Apply on condition
   auto app = simplify(cond);
   CHECK(app.size() == 1) << "Unexpected multiple goals in application!";
-  stmt->setCond(z3_gen->GetOrCreateCExpr(app[0].as_expr()));
+  auto result = app[0].as_expr().simplify();
+  stmt->setCond(z3_gen->GetOrCreateCExpr(result));
   return true;
 }
 
 bool SimplifyConditions::runOnModule(llvm::Module &module) {
+  LOG(INFO) << "Simplifying conditions using Z3";
   TraverseDecl(ast_ctx->getTranslationUnitDecl());
   return true;
 }

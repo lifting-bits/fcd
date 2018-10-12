@@ -243,7 +243,7 @@ void Z3ConvVisitor::DeclareCVar(clang::ValueDecl *c_decl) {
   DLOG(INFO) << "Declaring C variable: " << name;
   CHECK(c_decl != nullptr);
   if (c_var_map.find(name) != c_var_map.end()) {
-    DLOG(WARNING) << "Re-declaration of " << name;
+    DLOG(INFO) << "Re-declaration of " << name;
   }
   c_var_map[name] = c_decl;
 }
