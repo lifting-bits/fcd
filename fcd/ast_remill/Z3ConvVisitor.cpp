@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// #define GOOGLE_STRIP_LOG 1
+#define GOOGLE_STRIP_LOG 1
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -430,6 +430,7 @@ void Z3ConvVisitor::VisitUnaryApp(z3::expr z3_op) {
       LOG(FATAL) << "Unknown Z3 unary operator!";
       break;
   }
+  // Save
   InsertCExpr(z3_op, c_op);
 }
 
@@ -458,11 +459,25 @@ void Z3ConvVisitor::VisitBinaryApp(z3::expr z3_op) {
       }
     } break;
 
+    case Z3_OP_OR: {
+      c_op = lhs;
+      for (unsigned i = 1; i < z3_op.num_args(); ++i) {
+        rhs = GetCExpr(z3_op.arg(i));
+        c_op = CreateBinaryOperator(*ast_ctx, clang::BO_LOr, c_op, rhs, type);
+      }
+    } break;
+
+    case Z3_OP_BSREM:
+    case Z3_OP_BSREM_I:
+      c_op = CreateBinaryOperator(*ast_ctx, clang::BO_Rem, lhs, rhs, type);
+      break;
+
     // Unknowns
     default:
       LOG(FATAL) << "Unknown Z3 binary operator!";
       break;
   }
+  // Save
   InsertCExpr(z3_op, c_op);
 }
 
