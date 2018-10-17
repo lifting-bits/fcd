@@ -29,9 +29,11 @@
 
 #include "remill/BC/Util.h"
 
-#include "fcd/ast_remill/IRToASTVisitor.h"
-#include "fcd/ast_remill/SimplifyConditions.h"
+#include "fcd/ast_remill/DeadStmtElim.h"
 #include "fcd/ast_remill/GenerateAST.h"
+#include "fcd/ast_remill/IRToASTVisitor.h"
+#include "fcd/ast_remill/PropagateCond.h"
+#include "fcd/ast_remill/Z3CondSimplify.h"
 
 #include "fcd/ast/ast_passes.h"
 #include "fcd/codegen/translation_context_remill.h"
@@ -172,8 +174,8 @@ static std::unique_ptr<llvm::Module> LiftExecutable(Executable& executable) {
   std::list<uint64_t> entry_points;
   if (isFullDisassembly()) {
     for (uint64_t addr : EPR.getVisibleEntryPoints()) {
-      CHECK(EPR.getInfo(addr)) << "No symbol info for address " << std::hex
-                               << addr << std::dec;
+      CHECK(EPR.getInfo(addr))
+          << "No symbol info for address " << std::hex << addr << std::dec;
       entry_points.push_back(addr);
     }
   }
@@ -326,7 +328,10 @@ static bool GeneratePseudocode(llvm::Module& module,
 
   llvm::legacy::PassManager pm;
   pm.add(fcd::createGenerateASTPass(ins, gen));
-  pm.add(fcd::createSimplifyConditionsPass(ins, gen));
+  // pm.add(fcd::createDeadStmtElimPass(ins, gen));
+  pm.add(fcd::createZ3CondSimplifyPass(ins, gen));
+  // pm.add(fcd::createDeadStmtElimPass(ins, gen));
+  // pm.add(fcd::createPropagateCondPass(ins, gen));
   pm.run(module);
 
   // ins.getASTContext().getTranslationUnitDecl()->dump();

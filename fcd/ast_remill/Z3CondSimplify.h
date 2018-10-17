@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef FCD_AST_SIMPLIFYCONDITIONS_H_
-#define FCD_AST_SIMPLIFYCONDITIONS_H_
+#ifndef FCD_AST_Z3CONDSIMPLIFY_H_
+#define FCD_AST_Z3CONDSIMPLIFY_H_
 
 #include <llvm/IR/Module.h>
 
@@ -26,9 +26,8 @@
 
 namespace fcd {
 
-class SimplifyConditions
-    : public llvm::ModulePass,
-      public clang::RecursiveASTVisitor<SimplifyConditions> {
+class Z3CondSimplify : public llvm::ModulePass,
+                       public clang::RecursiveASTVisitor<Z3CondSimplify> {
  private:
   clang::ASTContext *ast_ctx;
   fcd::IRToASTVisitor *ast_gen;
@@ -38,20 +37,19 @@ class SimplifyConditions
  public:
   static char ID;
 
-  SimplifyConditions(clang::CompilerInstance &ins,
-                     fcd::IRToASTVisitor &ast_gen);
+  Z3CondSimplify(clang::CompilerInstance &ins, fcd::IRToASTVisitor &ast_gen);
 
   bool VisitIfStmt(clang::IfStmt *stmt);
 
   bool runOnModule(llvm::Module &module) override;
 };
 
-llvm::ModulePass *createSimplifyConditionsPass(clang::CompilerInstance &ins,
-                                               fcd::IRToASTVisitor &ast_gen);
+llvm::ModulePass *createZ3CondSimplifyPass(clang::CompilerInstance &ins,
+                                           fcd::IRToASTVisitor &ast_gen);
 }  // namespace fcd
 
 namespace llvm {
-void initializeSimplifyConditionsPass(PassRegistry &);
+void initializeZ3CondSimplifyPass(PassRegistry &);
 }
 
-#endif  // FCD_AST_SIMPLIFYCONDITIONS_H_
+#endif  // FCD_AST_Z3CONDSIMPLIFY_H_

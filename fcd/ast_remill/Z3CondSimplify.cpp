@@ -17,21 +17,21 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
-#include "fcd/ast_remill/SimplifyConditions.h"
+#include "fcd/ast_remill/Z3CondSimplify.h"
 
 namespace fcd {
 
-char SimplifyConditions::ID = 0;
+char Z3CondSimplify::ID = 0;
 
-SimplifyConditions::SimplifyConditions(clang::CompilerInstance &ins,
-                                       fcd::IRToASTVisitor &ast_gen)
-    : ModulePass(SimplifyConditions::ID),
+Z3CondSimplify::Z3CondSimplify(clang::CompilerInstance &ins,
+                               fcd::IRToASTVisitor &ast_gen)
+    : ModulePass(Z3CondSimplify::ID),
       ast_ctx(&ins.getASTContext()),
       ast_gen(&ast_gen),
       z3_ctx(new z3::context()),
       z3_gen(new fcd::Z3ConvVisitor(ast_ctx, z3_ctx.get())) {}
 
-bool SimplifyConditions::VisitIfStmt(clang::IfStmt *stmt) {
+bool Z3CondSimplify::VisitIfStmt(clang::IfStmt *stmt) {
   auto expr = z3_gen->GetOrCreateZ3Expr(stmt->getCond());
   z3::goal cond(*z3_ctx);
   cond.add(expr);
@@ -53,14 +53,14 @@ bool SimplifyConditions::VisitIfStmt(clang::IfStmt *stmt) {
   return true;
 }
 
-bool SimplifyConditions::runOnModule(llvm::Module &module) {
+bool Z3CondSimplify::runOnModule(llvm::Module &module) {
   LOG(INFO) << "Simplifying conditions using Z3";
   TraverseDecl(ast_ctx->getTranslationUnitDecl());
   return true;
 }
 
-llvm::ModulePass *createSimplifyConditionsPass(clang::CompilerInstance &ins,
-                                               fcd::IRToASTVisitor &gen) {
-  return new SimplifyConditions(ins, gen);
+llvm::ModulePass *createZ3CondSimplifyPass(clang::CompilerInstance &ins,
+                                           fcd::IRToASTVisitor &gen) {
+  return new Z3CondSimplify(ins, gen);
 }
 }  // namespace fcd
