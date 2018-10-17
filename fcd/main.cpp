@@ -328,9 +328,9 @@ static bool GeneratePseudocode(llvm::Module& module,
 
   llvm::legacy::PassManager pm;
   pm.add(fcd::createGenerateASTPass(ins, gen));
-  // pm.add(fcd::createDeadStmtElimPass(ins, gen));
+  pm.add(fcd::createDeadStmtElimPass(ins, gen));
   pm.add(fcd::createZ3CondSimplifyPass(ins, gen));
-  // pm.add(fcd::createDeadStmtElimPass(ins, gen));
+  pm.add(fcd::createDeadStmtElimPass(ins, gen));
   // pm.add(fcd::createPropagateCondPass(ins, gen));
   pm.run(module);
 
