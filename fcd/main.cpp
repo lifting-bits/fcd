@@ -32,7 +32,8 @@
 #include "fcd/ast_remill/DeadStmtElim.h"
 #include "fcd/ast_remill/GenerateAST.h"
 #include "fcd/ast_remill/IRToASTVisitor.h"
-#include "fcd/ast_remill/PropagateCond.h"
+// #include "fcd/ast_remill/NestedCondProp.h"
+#include "fcd/ast_remill/NestedScopeCombiner.h"
 #include "fcd/ast_remill/Z3CondSimplify.h"
 
 #include "fcd/ast/ast_passes.h"
@@ -331,7 +332,8 @@ static bool GeneratePseudocode(llvm::Module& module,
   pm.add(fcd::createDeadStmtElimPass(ins, gen));
   pm.add(fcd::createZ3CondSimplifyPass(ins, gen));
   pm.add(fcd::createDeadStmtElimPass(ins, gen));
-  // pm.add(fcd::createPropagateCondPass(ins, gen));
+  // pm.add(fcd::createNestedCondPropPass(ins, gen));
+  pm.add(fcd::createNestedScopeCombinerPass(ins, gen));
   pm.run(module);
 
   // ins.getASTContext().getTranslationUnitDecl()->dump();

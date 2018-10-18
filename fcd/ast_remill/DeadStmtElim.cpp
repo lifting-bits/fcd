@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-#define GOOGLE_STRIP_LOG 1
-
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -42,7 +40,7 @@ DeadStmtElim::DeadStmtElim(clang::CompilerInstance &ins,
       ast_gen(&ast_gen) {}
 
 bool DeadStmtElim::VisitIfStmt(clang::IfStmt *ifstmt) {
-  DLOG(INFO) << "VisitIfStmt";
+  // DLOG(INFO) << "VisitIfStmt";
   auto then = ifstmt->getThen();
   // Apply results from previous visitors
   if (stmts.find(then) != stmts.end()) {
@@ -60,7 +58,7 @@ bool DeadStmtElim::VisitIfStmt(clang::IfStmt *ifstmt) {
 }
 
 bool DeadStmtElim::VisitWhileStmt(clang::WhileStmt *loop) {
-  DLOG(INFO) << "VisitWhileStmt";
+  // DLOG(INFO) << "VisitWhileStmt";
   auto body = loop->getBody();
   // Apply results from previous visitors
   if (stmts.find(body) != stmts.end()) {
@@ -70,7 +68,7 @@ bool DeadStmtElim::VisitWhileStmt(clang::WhileStmt *loop) {
 }
 
 bool DeadStmtElim::VisitCompoundStmt(clang::CompoundStmt *compound) {
-  DLOG(INFO) << "VisitCompoundStmt";
+  // DLOG(INFO) << "VisitCompoundStmt";
   std::vector<clang::Stmt *> new_body;
   for (auto stmt : compound->body()) {
     // Apply results from previous visitors
