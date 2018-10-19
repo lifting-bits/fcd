@@ -31,6 +31,7 @@
 #include "remill/BC/Util.h"
 
 #include "fcd/ast_remill/GenerateAST.h"
+#include "fcd/ast_remill/Util.h"
 
 namespace fcd {
 
@@ -74,70 +75,6 @@ static void CFGSlice(llvm::BasicBlock *source, llvm::BasicBlock *sink,
       }
     }
   }
-}
-
-static clang::CompoundStmt *CreateCompoundStmt(
-    clang::ASTContext &ctx, std::vector<clang::Stmt *> &stmts) {
-  return new (ctx) clang::CompoundStmt(ctx, stmts, clang::SourceLocation(),
-                                       clang::SourceLocation());
-}
-
-static clang::IfStmt *CreateIfStmt(clang::ASTContext &ctx, clang::Expr *cond,
-                                   clang::Stmt *then) {
-  return new (ctx)
-      clang::IfStmt(ctx, clang::SourceLocation(), /* IsConstexpr=*/false,
-                    /* init=*/nullptr,
-                    /* var=*/nullptr, cond, then);
-}
-
-static clang::WhileStmt *CreateWhileStmt(clang::ASTContext &ctx,
-                                         clang::Expr *cond, clang::Stmt *body) {
-  return new (ctx)
-      clang::WhileStmt(ctx, nullptr, cond, body, clang::SourceLocation());
-}
-
-static clang::BreakStmt *CreateBreakStmt(clang::ASTContext &ctx) {
-  return new (ctx) clang::BreakStmt(clang::SourceLocation());
-}
-
-static clang::Expr *CreateBoolBinOp(clang::ASTContext &ctx,
-                                    clang::BinaryOperatorKind opc,
-                                    clang::Expr *lhs, clang::Expr *rhs) {
-  CHECK(lhs || rhs) << "No operand given for binary logical expression";
-
-  if (!lhs) {
-    return rhs;
-  } else if (!rhs) {
-    return lhs;
-  } else {
-    return new (ctx)
-        clang::BinaryOperator(lhs, rhs, opc, ctx.BoolTy, clang::VK_RValue,
-                              clang::OK_Ordinary, clang::SourceLocation(),
-                              /*fpContractable=*/false);
-  }
-}
-
-static clang::Expr *CreateAndExpr(clang::ASTContext &ctx, clang::Expr *lhs,
-                                  clang::Expr *rhs) {
-  return CreateBoolBinOp(ctx, clang::BO_LAnd, lhs, rhs);
-}
-
-static clang::Expr *CreateOrExpr(clang::ASTContext &ctx, clang::Expr *lhs,
-                                 clang::Expr *rhs) {
-  return CreateBoolBinOp(ctx, clang::BO_LOr, lhs, rhs);
-}
-
-static clang::Expr *CreateNotExpr(clang::ASTContext &ctx, clang::Expr *op) {
-  CHECK(op) << "No operand given for unary logical expression";
-
-  return new (ctx)
-      clang::UnaryOperator(op, clang::UO_LNot, ctx.BoolTy, clang::VK_RValue,
-                           clang::OK_Ordinary, clang::SourceLocation());
-}
-
-static clang::Expr *CreateTrueExpr(clang::ASTContext &ctx) {
-  return clang::IntegerLiteral::Create(
-      ctx, llvm::APInt(1, 1), ctx.UnsignedIntTy, clang::SourceLocation());
 }
 
 static bool IsRegionBlock(llvm::Region *region, llvm::BasicBlock *block) {

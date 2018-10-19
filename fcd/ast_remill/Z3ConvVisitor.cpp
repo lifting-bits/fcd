@@ -20,6 +20,7 @@
 #include <glog/logging.h>
 
 #include "fcd/ast_remill/Z3ConvVisitor.h"
+#include "fcd/ast_remill/Util.h"
 
 namespace fcd {
 
@@ -165,31 +166,6 @@ static clang::Expr *CreateLiteralExpr(clang::ASTContext &ast_ctx,
   return result;
 }
 
-static clang::DeclRefExpr *CreateDeclRefExpr(clang::ASTContext &ast_ctx,
-                                             clang::ValueDecl *val) {
-  DLOG(INFO) << "Creating DeclRefExpr for " << val->getNameAsString();
-  return clang::DeclRefExpr::Create(
-      ast_ctx, clang::NestedNameSpecifierLoc(), clang::SourceLocation(), val,
-      false, val->getLocation(), val->getType(), clang::VK_LValue);
-}
-
-static clang::Expr *CreateNotExpr(clang::ASTContext &ctx, clang::Expr *op) {
-  CHECK(op) << "No operand given for unary logical expression";
-
-  return new (ctx)
-      clang::UnaryOperator(op, clang::UO_LNot, ctx.BoolTy, clang::VK_RValue,
-                           clang::OK_Ordinary, clang::SourceLocation());
-}
-
-static clang::BinaryOperator *CreateBinaryOperator(
-    clang::ASTContext &ast_ctx, clang::BinaryOperatorKind opc, clang::Expr *lhs,
-    clang::Expr *rhs, clang::QualType res_type) {
-  return new (ast_ctx)
-      clang::BinaryOperator(lhs, rhs, opc, res_type, clang::VK_RValue,
-                            clang::OK_Ordinary, clang::SourceLocation(),
-                            /*fpContractable=*/false);
-}
-
 }  // namespace
 
 Z3ConvVisitor::Z3ConvVisitor(clang::ASTContext *c_ctx, z3::context *z_ctx)
@@ -268,6 +244,15 @@ clang::Expr *Z3ConvVisitor::GetOrCreateCExpr(z3::expr z3_expr) {
     VisitZ3Expr(z3_expr);
   }
   return GetCExpr(z3_expr);
+}
+
+// Translates clang unary operators expressions to Z3 equivalents.
+bool Z3ConvVisitor::VisitParenExpr(clang::ParenExpr *parens) {
+  DLOG(INFO) << "VisitParenExpr";
+  if (z3_expr_map.find(parens) == z3_expr_map.end()) {
+    InsertZ3Expr(parens, GetOrCreateZ3Expr(parens->getSubExpr()));
+  }
+  return true;
 }
 
 // Translates clang unary operators expressions to Z3 equivalents.

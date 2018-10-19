@@ -58,6 +58,7 @@ class Z3ConvVisitor
     Z3ConvVisitor(clang::ASTContext *c_ctx, z3::context *z3_ctx);
     bool shouldTraversePostOrder() { return true; }
 
+    bool VisitParenExpr(clang::ParenExpr *parens);
     bool VisitUnaryOperator(clang::UnaryOperator *c_op);
     bool VisitBinaryOperator(clang::BinaryOperator *c_op);
     bool VisitDeclRefExpr(clang::DeclRefExpr *c_ref);

@@ -24,6 +24,9 @@
 #include "remill/BC/Util.h"
 
 #include "fcd/ast_remill/IRToASTVisitor.h"
+#include "fcd/ast_remill/Util.h"
+
+namespace fcd {
 
 namespace {
 
@@ -93,15 +96,6 @@ static clang::QualType GetQualType(clang::ASTContext &ctx, llvm::Type *type,
   return result;
 }
 
-static clang::IdentifierInfo *CreateIdentifier(clang::ASTContext &ctx,
-                                               std::string name) {
-  std::string str = "";
-  for (auto chr : name) {
-    str.push_back(std::isalnum(chr) ? chr : '_');
-  }
-  return &ctx.Idents.get(str);
-}
-
 static clang::Expr *CreateLiteralExpr(clang::ASTContext &ast_ctx,
                                       clang::DeclContext *decl_ctx,
                                       llvm::Constant *constant) {
@@ -139,26 +133,7 @@ static clang::VarDecl *CreateVarDecl(clang::ASTContext &ast_ctx,
       nullptr, clang::SC_None);
 }
 
-static clang::DeclRefExpr *CreateDeclRefExpr(clang::ASTContext &ast_ctx,
-                                             clang::ValueDecl *val) {
-  DLOG(INFO) << "Creating DeclRefExpr for " << val->getNameAsString();
-  return clang::DeclRefExpr::Create(
-      ast_ctx, clang::NestedNameSpecifierLoc(), clang::SourceLocation(), val,
-      false, val->getLocation(), val->getType(), clang::VK_LValue);
-}
-
-static clang::BinaryOperator *CreateBinaryOperator(
-    clang::ASTContext &ast_ctx, clang::BinaryOperatorKind opc, clang::Expr *lhs,
-    clang::Expr *rhs, clang::QualType res_type) {
-  return new (ast_ctx)
-      clang::BinaryOperator(lhs, rhs, opc, res_type, clang::VK_RValue,
-                            clang::OK_Ordinary, clang::SourceLocation(),
-                            /*fpContractable=*/false);
-}
-
 }  // namespace
-
-namespace fcd {
 
 IRToASTVisitor::IRToASTVisitor(clang::CompilerInstance &ins)
     : cc_ins(&ins), ast_ctx(cc_ins->getASTContext()) {}
@@ -169,7 +144,7 @@ clang::FunctionDecl *IRToASTVisitor::GetFunctionDecl(llvm::Instruction *inst) {
 }
 
 clang::Expr *IRToASTVisitor::GetOperandExpr(clang::DeclContext *decl_ctx,
-                                          llvm::Value *val) {
+                                            llvm::Value *val) {
   DLOG(INFO) << "Getting Expr for " << remill::LLVMThingToString(val);
   clang::Expr *result = nullptr;
 
