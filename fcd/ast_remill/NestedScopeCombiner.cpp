@@ -46,7 +46,7 @@ bool NestedScopeCombiner::VisitIfStmt(clang::IfStmt *ifstmt) {
   // Substitute `then`
   auto iter = substitutions.find(then);
   if (iter != substitutions.end()) {
-    ifstmt->setThen(iter->second);
+    ifstmt->setThen(then = iter->second);
   }
   // Determine whether `cond` is a constant expression that is always true and
   // `ifstmt` should be replaced by `then` in it's parent nodes.
