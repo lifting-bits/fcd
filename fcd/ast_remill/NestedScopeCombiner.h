@@ -31,8 +31,7 @@ class NestedScopeCombiner
  private:
   clang::ASTContext *ast_ctx;
   fcd::IRToASTVisitor *ast_gen;
-
-  std::unordered_map<clang::IfStmt *, clang::Expr *> parent_conds;
+  
   std::unordered_map<clang::Stmt *, clang::Stmt *> substitutions;
 
  public:

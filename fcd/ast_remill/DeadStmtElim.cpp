@@ -18,18 +18,9 @@
 #include <glog/logging.h>
 
 #include "fcd/ast_remill/DeadStmtElim.h"
+#include "fcd/ast_remill/Util.h"
 
 namespace fcd {
-
-namespace {
-
-static clang::CompoundStmt *CreateCompoundStmt(
-    clang::ASTContext &ctx, std::vector<clang::Stmt *> &stmts) {
-  return new (ctx) clang::CompoundStmt(ctx, stmts, clang::SourceLocation(),
-                                       clang::SourceLocation());
-}
-
-}  // namespace
 
 char DeadStmtElim::ID = 0;
 

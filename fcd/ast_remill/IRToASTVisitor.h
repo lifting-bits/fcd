@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-
 #ifndef FCD_AST_IRTOASTVISITOR_H_
 #define FCD_AST_IRTOASTVISITOR_H_
 
