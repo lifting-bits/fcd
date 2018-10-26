@@ -29,6 +29,7 @@
 
 #include "remill/BC/Util.h"
 
+#include "fcd/ast_remill/CondBasedRefine.h"
 #include "fcd/ast_remill/DeadStmtElim.h"
 #include "fcd/ast_remill/GenerateAST.h"
 #include "fcd/ast_remill/IRToASTVisitor.h"
@@ -334,6 +335,7 @@ static bool GeneratePseudocode(llvm::Module& module,
   pm.add(fcd::createDeadStmtElimPass(ins, gen));
   pm.add(fcd::createNestedCondPropPass(ins, gen));
   pm.add(fcd::createNestedScopeCombinerPass(ins, gen));
+  pm.add(fcd::createCondBasedRefinePass(ins, gen));
   pm.run(module);
 
   // ins.getASTContext().getTranslationUnitDecl()->dump();
