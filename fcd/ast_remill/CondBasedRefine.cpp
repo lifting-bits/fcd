@@ -18,7 +18,6 @@
 #include <glog/logging.h>
 
 #include "fcd/ast_remill/CondBasedRefine.h"
-#include "fcd/ast_remill/Util.h"
 
 namespace fcd {
 
@@ -103,56 +102,16 @@ void CondBasedRefine::CreateIfThenElseStmts(IfStmtSet stmts) {
   }
 }
 
-bool CondBasedRefine::VisitIfStmt(clang::IfStmt *ifstmt) {
-  // DLOG(INFO) << "VisitIfStmt";
-  auto then = ifstmt->getThen();
-  auto iter = substitutions.find(then);
-  if (iter != substitutions.end()) {
-    if (auto sub = iter->second) {
-      ifstmt->setThen(sub);
-    }
-  }
-  return true;
-}
-
-bool CondBasedRefine::VisitWhileStmt(clang::WhileStmt *loop) {
-  // DLOG(INFO) << "VisitWhileStmt";
-  auto body = loop->getBody();
-  auto iter = substitutions.find(body);
-  if (iter != substitutions.end()) {
-    if (auto sub = iter->second) {
-      loop->setBody(sub);
-    }
-  }
-  return true;
-}
-
-bool CondBasedRefine::VisitFunctionDecl(clang::FunctionDecl *fdecl) {
-  // DLOG(INFO) << "VisitFunctionDecl";
-  if (auto body = fdecl->getBody()) {
-    auto iter = substitutions.find(body);
-    if (iter != substitutions.end()) {
-      if (auto sub = iter->second) {
-        fdecl->setBody(sub);
-      }
-    }
-  }
-  return true;
-}
-
 bool CondBasedRefine::VisitCompoundStmt(clang::CompoundStmt *compound) {
   // DLOG(INFO) << "VisitCompoundStmt";
   // Create if-then-else substitutions for IfStmts in `compound`
   CreateIfThenElseStmts(GetIfStmts(compound));
-  // Apply previously computed substitutions
+  // Apply created if-then-else substitutions
+  ReplaceChildren(compound, substitutions);
+  // Create a replacement for `compound`
   std::vector<clang::Stmt *> new_body;
   for (auto stmt : compound->body()) {
-    auto iter = substitutions.find(stmt);
-    if (iter != substitutions.end()) {
-      if (auto sub = iter->second) {
-        new_body.push_back(sub);
-      }
-    } else {
+    if (stmt){
       new_body.push_back(stmt);
     }
   }

@@ -19,31 +19,28 @@
 
 #include <llvm/IR/Module.h>
 
-#include <clang/AST/RecursiveASTVisitor.h>
-
-#include <unordered_map>
 #include <unordered_set>
 
+#include "fcd/ast_remill/TransformVisitor.h"
 #include "fcd/ast_remill/IRToASTVisitor.h"
+#include "fcd/ast_remill/Util.h"
 #include "fcd/ast_remill/Z3ConvVisitor.h"
 
 namespace fcd {
 
 class CondBasedRefine : public llvm::ModulePass,
-                        public clang::RecursiveASTVisitor<CondBasedRefine> {
+                        public TransformVisitor<CondBasedRefine> {
  private:
   clang::ASTContext *ast_ctx;
   fcd::IRToASTVisitor *ast_gen;
   std::unique_ptr<z3::context> z3_ctx;
   std::unique_ptr<fcd::Z3ConvVisitor> z3_gen;
 
-  std::unordered_map<clang::Stmt *, clang::Stmt *> substitutions;
-
   using IfStmtSet = std::unordered_set<clang::IfStmt *>;
 
   void GetBranchCandidates(clang::Expr *cond, const IfStmtSet &stmts,
                            IfStmtSet &thens, IfStmtSet &elses);
-  
+
   void CreateIfThenElseStmts(IfStmtSet stmts);
 
  public:
@@ -51,11 +48,6 @@ class CondBasedRefine : public llvm::ModulePass,
 
   CondBasedRefine(clang::CompilerInstance &ins, fcd::IRToASTVisitor &ast_gen);
 
-  bool shouldTraversePostOrder() { return true; }
-
-  bool VisitIfStmt(clang::IfStmt *ifstmt);
-  bool VisitWhileStmt(clang::WhileStmt *loop);
-  bool VisitFunctionDecl(clang::FunctionDecl *fdecl);
   bool VisitCompoundStmt(clang::CompoundStmt *compound);
 
   bool runOnModule(llvm::Module &module) override;

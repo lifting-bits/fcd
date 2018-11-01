@@ -44,6 +44,15 @@ static clang::Expr *CreateBoolBinOp(clang::ASTContext &ctx,
 
 }  // namespace
 
+void ReplaceChildren(clang::Stmt *stmt, StmtMap &repl_map) {
+  for (auto c_it = stmt->child_begin(); c_it != stmt->child_end(); ++c_it) {
+    auto s_it = repl_map.find(*c_it);
+    if (s_it != repl_map.end()) {
+      *c_it = s_it->second;
+    }
+  }
+}
+
 clang::IdentifierInfo *CreateIdentifier(clang::ASTContext &ctx,
                                         std::string name) {
   std::string str = "";

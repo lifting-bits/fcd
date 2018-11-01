@@ -44,7 +44,6 @@ class NestedCondProp : public llvm::ModulePass,
   NestedCondProp(clang::CompilerInstance &ins, fcd::IRToASTVisitor &ast_gen);
 
   bool VisitIfStmt(clang::IfStmt *stmt);
-  // bool VisitCompoundStmt(clang::CompoundStmt *compound);
 
   bool runOnModule(llvm::Module &module) override;
 };

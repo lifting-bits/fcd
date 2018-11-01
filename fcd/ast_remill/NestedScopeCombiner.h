@@ -19,33 +19,26 @@
 
 #include <llvm/IR/Module.h>
 
-#include <clang/AST/RecursiveASTVisitor.h>
-
 #include "fcd/ast_remill/IRToASTVisitor.h"
+#include "fcd/ast_remill/TransformVisitor.h"
+#include "fcd/ast_remill/Util.h"
 
 namespace fcd {
 
-class NestedScopeCombiner
-    : public llvm::ModulePass,
-      public clang::RecursiveASTVisitor<NestedScopeCombiner> {
+class NestedScopeCombiner : public llvm::ModulePass,
+                            public TransformVisitor<NestedScopeCombiner> {
  private:
   clang::ASTContext *ast_ctx;
   fcd::IRToASTVisitor *ast_gen;
-  
-  std::unordered_map<clang::Stmt *, clang::Stmt *> substitutions;
 
  public:
   static char ID;
 
   NestedScopeCombiner(clang::CompilerInstance &ins,
                       fcd::IRToASTVisitor &ast_gen);
-  
-  bool shouldTraversePostOrder() { return true; }
 
   bool VisitIfStmt(clang::IfStmt *ifstmt);
-  bool VisitWhileStmt(clang::WhileStmt *loop);
   bool VisitCompoundStmt(clang::CompoundStmt *compound);
-  bool VisitFunctionDecl(clang::FunctionDecl *fdecl);
 
   bool runOnModule(llvm::Module &module) override;
 };

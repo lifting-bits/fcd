@@ -20,7 +20,13 @@
 #include <clang/AST/ASTContext.h>
 #include <clang/AST/Expr.h>
 
+#include <unordered_map>
+
 namespace fcd {
+
+using StmtMap = std::unordered_map<clang::Stmt *, clang::Stmt *>;
+
+void ReplaceChildren(clang::Stmt *stmt, StmtMap &repl_map);
 
 clang::IdentifierInfo *CreateIdentifier(clang::ASTContext &ctx,
                                         std::string name);

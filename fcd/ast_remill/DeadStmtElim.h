@@ -19,31 +19,25 @@
 
 #include <llvm/IR/Module.h>
 
-#include <clang/AST/RecursiveASTVisitor.h>
-
-#include <unordered_map>
-
 #include "fcd/ast_remill/IRToASTVisitor.h"
+#include "fcd/ast_remill/TransformVisitor.h"
+#include "fcd/ast_remill/Util.h"
 
 namespace fcd {
 
 class DeadStmtElim : public llvm::ModulePass,
-                     public clang::RecursiveASTVisitor<DeadStmtElim> {
+                     public TransformVisitor<DeadStmtElim> {
  private:
   clang::ASTContext *ast_ctx;
   fcd::IRToASTVisitor *ast_gen;
-
-  std::unordered_map<clang::Stmt*, clang::Stmt*> stmts;
 
  public:
   static char ID;
 
   DeadStmtElim(clang::CompilerInstance &ins, fcd::IRToASTVisitor &ast_gen);
-  bool shouldTraversePostOrder() { return true; }
 
   bool VisitIfStmt(clang::IfStmt *ifstmt);
   bool VisitCompoundStmt(clang::CompoundStmt *compound);
-  bool VisitWhileStmt(clang::WhileStmt *loop);
 
   bool runOnModule(llvm::Module &module) override;
 };
