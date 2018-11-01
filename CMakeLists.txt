@@ -38,7 +38,7 @@ if(NOT ${Clang_FOUND})
   find_package(ClangFallback REQUIRED)
 endif()
 
-set(CLANG_LIBS libclang clangIndex clangCodeGen)
+set(CLANG_LIBS libclang clangIndex clangCodeGen clangASTMatchers)
 list(APPEND PROJECT_LIBRARIES ${CLANG_LIBS})
 
 # hack: rpath magic for libclang.so
