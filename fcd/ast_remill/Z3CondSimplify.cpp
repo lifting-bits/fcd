@@ -31,10 +31,10 @@ Z3CondSimplify::Z3CondSimplify(clang::CompilerInstance &ins,
       z3_ctx(new z3::context()),
       z3_gen(new fcd::Z3ConvVisitor(ast_ctx, z3_ctx.get())) {}
 
-bool Z3CondSimplify::VisitIfStmt(clang::IfStmt *stmt) {
-  auto expr = z3_gen->GetOrCreateZ3Expr(stmt->getCond());
-  z3::goal cond(*z3_ctx);
-  cond.add(expr);
+clang::Expr *Z3CondSimplify::SimplifyCExpr(clang::Expr *c_expr) {
+  auto z3_expr = z3_gen->GetOrCreateZ3Expr(c_expr);
+  z3::goal goal(*z3_ctx);
+  goal.add(z3_expr);
   // Custom Z3 bitvector predicate simplifier
   auto simplify =
       // Simplify boolean structure with AIGs
@@ -46,10 +46,24 @@ bool Z3CondSimplify::VisitIfStmt(clang::IfStmt *stmt) {
       // Contextual simplification
       z3::tactic(*z3_ctx, "ctx-simplify");
   // Apply on condition
-  auto app = simplify(cond);
+  auto app = simplify(goal);
   CHECK(app.size() == 1) << "Unexpected multiple goals in application!";
-  auto result = app[0].as_expr().simplify();
-  stmt->setCond(z3_gen->GetOrCreateCExpr(result));
+  auto z3_result = app[0].as_expr().simplify();
+  return z3_gen->GetOrCreateCExpr(z3_result);
+}
+
+bool Z3CondSimplify::VisitIfStmt(clang::IfStmt *stmt) {
+  stmt->setCond(SimplifyCExpr(stmt->getCond()));
+  return true;
+}
+
+bool Z3CondSimplify::VisitWhileStmt(clang::WhileStmt *loop) {
+  loop->setCond(SimplifyCExpr(loop->getCond()));
+  return true;
+}
+
+bool Z3CondSimplify::VisitDoStmt(clang::DoStmt *loop) {
+  loop->setCond(SimplifyCExpr(loop->getCond()));
   return true;
 }
 

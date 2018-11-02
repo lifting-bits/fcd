@@ -34,12 +34,16 @@ class Z3CondSimplify : public llvm::ModulePass,
   std::unique_ptr<z3::context> z3_ctx;
   std::unique_ptr<fcd::Z3ConvVisitor> z3_gen;
 
+  clang::Expr *SimplifyCExpr(clang::Expr *c_expr);
+
  public:
   static char ID;
 
   Z3CondSimplify(clang::CompilerInstance &ins, fcd::IRToASTVisitor &ast_gen);
 
   bool VisitIfStmt(clang::IfStmt *stmt);
+  bool VisitWhileStmt(clang::WhileStmt *loop);
+  bool VisitDoStmt(clang::DoStmt *loop);
 
   bool runOnModule(llvm::Module &module) override;
 };
