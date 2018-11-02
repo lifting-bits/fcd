@@ -43,6 +43,9 @@ clang::IfStmt *CreateIfStmt(clang::ASTContext &ctx, clang::Expr *cond,
 clang::WhileStmt *CreateWhileStmt(clang::ASTContext &ctx, clang::Expr *cond,
                                   clang::Stmt *body);
 
+clang::DoStmt *CreateDoStmt(clang::ASTContext &ctx, clang::Expr *cond,
+                            clang::Stmt *body);
+
 clang::BreakStmt *CreateBreakStmt(clang::ASTContext &ctx);
 
 clang::DeclRefExpr *CreateDeclRefExpr(clang::ASTContext &ast_ctx,

@@ -90,6 +90,13 @@ clang::WhileStmt *CreateWhileStmt(clang::ASTContext &ctx, clang::Expr *cond,
       clang::WhileStmt(ctx, nullptr, cond, body, clang::SourceLocation());
 }
 
+clang::DoStmt *CreateDoStmt(clang::ASTContext &ctx, clang::Expr *cond,
+                            clang::Stmt *body) {
+  return new (ctx)
+      clang::DoStmt(body, cond, clang::SourceLocation(),
+                    clang::SourceLocation(), clang::SourceLocation());
+}
+
 clang::BreakStmt *CreateBreakStmt(clang::ASTContext &ctx) {
   return new (ctx) clang::BreakStmt(clang::SourceLocation());
 }

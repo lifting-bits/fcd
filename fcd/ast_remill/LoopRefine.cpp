@@ -36,26 +36,60 @@ class InferenceRule : public MatchFinder::MatchCallback {
   StmtToTy *substitution;
 
  public:
-  InferenceRule(StatementMatcher matcher) : cond(matcher) {}
+  InferenceRule(StatementMatcher matcher)
+      : cond(matcher), match(nullptr), substitution(nullptr) {}
   const StatementMatcher &GetCondition() const { return cond; }
   operator bool() { return match; }
 
-  virtual StmtToTy *GetOrCreateSubstitution(StmtFromTy *stmt) = 0;
+  virtual StmtToTy *GetOrCreateSubstitution(clang::ASTContext &ctx,
+                                            StmtFromTy *stmt) = 0;
 };
 
 // Matches `while(1)`, `if(1)`, etc.
-const auto cond_true = hasCondition(integerLiteral(equals(true)));
+static const auto cond_true = hasCondition(integerLiteral(equals(true)));
 // Matches `{ break; }`
-const auto comp_break = compoundStmt(has(breakStmt()), statementCountIs(1));
+static const auto comp_break =
+    compoundStmt(has(breakStmt()), statementCountIs(1));
+
+class WhileRule : public InferenceRule<clang::WhileStmt, clang::WhileStmt> {
+ public:
+  WhileRule()
+      : InferenceRule(forEachDescendant(ifStmt(
+            stmt().bind("if"), hasThen(comp_break),
+            hasParent(compoundStmt(
+                stmt().bind("body"),
+                hasParent(whileStmt(stmt().bind("while"), cond_true))))))) {}
+
+  void run(const MatchFinder::MatchResult &result) {
+    auto if_break = result.Nodes.getNodeAs<clang::IfStmt>("if");
+    auto loop_body = result.Nodes.getNodeAs<clang::CompoundStmt>("body");
+    if (loop_body->body_front() == if_break) {
+      match = result.Nodes.getNodeAs<clang::WhileStmt>("while");
+    }
+  }
+
+  clang::WhileStmt *GetOrCreateSubstitution(clang::ASTContext &ctx,
+                                            clang::WhileStmt *loop) {
+    CHECK(loop == match)
+        << "Substituted WhileStmt is not the matched WhileStmt!";
+    auto comp = llvm::cast<clang::CompoundStmt>(loop->getBody());
+    auto cond = llvm::cast<clang::IfStmt>(comp->body_back())->getCond();
+    std::vector<clang::Stmt *> new_body(comp->body_begin() + 1,
+                                        comp->body_end());
+
+    return CreateWhileStmt(ctx, CreateNotExpr(ctx, cond),
+                           CreateCompoundStmt(ctx, new_body));
+  }
+};
 
 class DoWhileRule : public InferenceRule<clang::WhileStmt, clang::DoStmt> {
  public:
   DoWhileRule()
-      : InferenceRule(ifStmt(
+      : InferenceRule(forEachDescendant(ifStmt(
             stmt().bind("if"), hasThen(comp_break),
             hasParent(compoundStmt(
                 stmt().bind("body"),
-                hasParent(whileStmt(stmt().bind("while"), cond_true)))))) {}
+                hasParent(whileStmt(stmt().bind("while"), cond_true))))))) {}
 
   void run(const MatchFinder::MatchResult &result) {
     auto if_break = result.Nodes.getNodeAs<clang::IfStmt>("if");
@@ -65,8 +99,17 @@ class DoWhileRule : public InferenceRule<clang::WhileStmt, clang::DoStmt> {
     }
   }
 
-  clang::DoStmt *GetOrCreateSubstitution(clang::WhileStmt *loop) {
-    return nullptr;
+  clang::DoStmt *GetOrCreateSubstitution(clang::ASTContext &ctx,
+                                         clang::WhileStmt *loop) {
+    CHECK(loop == match)
+        << "Substituted WhileStmt is not the matched WhileStmt!";
+    auto comp = llvm::cast<clang::CompoundStmt>(loop->getBody());
+    auto cond = llvm::cast<clang::IfStmt>(comp->body_back())->getCond();
+    std::vector<clang::Stmt *> new_body(comp->body_begin(),
+                                        comp->body_end() - 1);
+
+    return CreateDoStmt(ctx, CreateNotExpr(ctx, cond),
+                        CreateCompoundStmt(ctx, new_body));
   }
 };
 
@@ -87,13 +130,13 @@ bool LoopRefine::VisitWhileStmt(clang::WhileStmt *loop) {
   finder.addMatcher(do_while.GetCondition(), &do_while);
   finder.match(*loop, *ast_ctx);
   if (do_while) {
-    DLOG(INFO) << "HIT";
+    substitutions[loop] = do_while.GetOrCreateSubstitution(*ast_ctx, loop);
   }
   return true;
 }
 
 bool LoopRefine::runOnModule(llvm::Module &module) {
-  LOG(INFO) << "Loop refinement";
+  LOG(INFO) << "Rule-based loop refinement";
   TraverseDecl(ast_ctx->getTranslationUnitDecl());
   return true;
 }
