@@ -47,8 +47,6 @@ class Z3ConvVisitor
     
     void VisitZ3Expr(z3::expr z3_expr);
     
-    z3::expr Z3BoolCast(z3::expr expr);
-
  public:
     z3::expr GetOrCreateZ3Expr(clang::Expr *c_expr);
     clang::Expr *GetOrCreateCExpr(z3::expr z3_expr);
@@ -57,6 +55,8 @@ class Z3ConvVisitor
 
     Z3ConvVisitor(clang::ASTContext *c_ctx, z3::context *z3_ctx);
     bool shouldTraversePostOrder() { return true; }
+
+    z3::expr Z3BoolCast(z3::expr expr);
 
     bool VisitParenExpr(clang::ParenExpr *parens);
     bool VisitUnaryOperator(clang::UnaryOperator *c_op);

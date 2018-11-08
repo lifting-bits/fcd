@@ -17,13 +17,15 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
+#include <algorithm>
+
 #include "fcd/ast_remill/CondBasedRefine.h"
 
 namespace fcd {
 
 namespace {
 
-using IfStmtSet = std::unordered_set<clang::IfStmt *>;
+using IfStmtSet = std::set<clang::IfStmt *>;
 
 static IfStmtSet GetIfStmts(clang::CompoundStmt *compound) {
   IfStmtSet result;
@@ -35,15 +37,14 @@ static IfStmtSet GetIfStmts(clang::CompoundStmt *compound) {
   return result;
 }
 
-static std::vector<clang::Stmt *> MergeIfStmtBodies(IfStmtSet &ifstmts) {
-  std::vector<clang::Stmt *> result;
-  for (auto stmt : ifstmts) {
-    auto then = stmt->getThen();
-    if (auto comp = llvm::dyn_cast<clang::CompoundStmt>(then)) {
-      result.insert(result.end(), comp->body_begin(), comp->body_end());
-    } else {
-      LOG(FATAL) << "Then branch must be a clang::CompoundStmt!";
+static std::vector<z3::expr> SplitClause(z3::expr expr) {
+  std::vector<z3::expr> result;
+  if (expr.decl().decl_kind() == Z3_OP_AND) {
+    for (unsigned i = 0; i < expr.num_args(); ++i) {
+      result.push_back(expr.arg(i));
     }
+  } else {
+    result.push_back(expr);
   }
   return result;
 }
@@ -60,44 +61,86 @@ CondBasedRefine::CondBasedRefine(clang::CompilerInstance &ins,
       z3_ctx(new z3::context()),
       z3_gen(new fcd::Z3ConvVisitor(ast_ctx, z3_ctx.get())) {}
 
-void CondBasedRefine::GetBranchCandidates(clang::Expr *cond,
-                                          const IfStmtSet &stmts,
-                                          IfStmtSet &thens, IfStmtSet &elses) {
-  auto z3_cond = z3_gen->GetOrCreateZ3Expr(cond);
-  for (auto cand : stmts) {
-    auto z3_cand = z3_gen->GetOrCreateZ3Expr(cand->getCond());
-    auto then_test = (z3_cond && !z3_cand).simplify();
-    auto else_test = (z3_cond || z3_cand).simplify();
-    if (then_test.bool_value() == Z3_L_FALSE) {
-      thens.insert(cand);
-    } else if (else_test.bool_value() == Z3_L_TRUE) {
-      elses.insert(cand);
-    }
+z3::expr CondBasedRefine::ThenTest(z3::expr lhs, z3::expr rhs) {
+  auto Pred = [](z3::expr a, z3::expr b) {
+    auto test = (!a && b).simplify();
+    return test.bool_value() != Z3_L_FALSE;
+  };
+
+  auto lhs_c = SplitClause(lhs);
+  auto rhs_c = SplitClause(rhs);
+  auto match = std::mismatch(lhs_c.begin(), lhs_c.end(), rhs_c.begin(), Pred);
+
+  if (match.first == lhs_c.end() || match.second == rhs_c.end()) {
+    return z3_ctx->bool_val(false);
   }
+
+  return *match.first;
+}
+
+z3::expr CondBasedRefine::ElseTest(z3::expr lhs, z3::expr rhs) {
+  auto Pred = [](z3::expr a, z3::expr b) {
+    auto test = (a || b).simplify();
+    return test.bool_value() != Z3_L_TRUE;
+  };
+
+  auto lhs_c = SplitClause(lhs);
+  auto rhs_c = SplitClause(rhs);
+  auto match = std::mismatch(lhs_c.begin(), lhs_c.end(), rhs_c.begin(), Pred);
+
+  if (match.first == lhs_c.end() || match.second == rhs_c.end()) {
+    return z3_ctx->bool_val(false);
+  }
+
+  return *match.first;
+}
+
+clang::IfStmt *CondBasedRefine::MergeIfStmts(clang::IfStmt *lhs,
+                                             clang::IfStmt *rhs) {
+  auto z3_lhs = z3_gen->Z3BoolCast(z3_gen->GetOrCreateZ3Expr(lhs->getCond()));
+  auto z3_rhs = z3_gen->Z3BoolCast(z3_gen->GetOrCreateZ3Expr(rhs->getCond()));
+
+  std::vector<clang::Stmt *> then_body({lhs});
+  
+  auto then_test = ThenTest(z3_lhs, z3_rhs);
+  if (then_test.bool_value() != Z3_L_FALSE) {
+    auto cond = z3_gen->GetOrCreateCExpr(then_test);
+    then_body.push_back(rhs);
+    auto thens = CreateCompoundStmt(*ast_ctx, then_body);
+    return CreateIfStmt(*ast_ctx, cond, thens);
+  }
+
+  auto else_test = ElseTest(z3_lhs, z3_rhs);
+  if (else_test.bool_value() != Z3_L_FALSE) {
+    auto cond = z3_gen->GetOrCreateCExpr(else_test);
+    std::vector<clang::Stmt *> else_body({rhs});
+    auto thens = CreateCompoundStmt(*ast_ctx, then_body);
+    auto result = CreateIfStmt(*ast_ctx, cond, thens);
+    result->setElse(CreateCompoundStmt(*ast_ctx, else_body));
+    return result;
+  }
+
+  return nullptr;
 }
 
 void CondBasedRefine::CreateIfThenElseStmts(IfStmtSet stmts) {
   while (!stmts.empty()) {
-    auto ifstmt = *stmts.begin();
-    auto cond = ifstmt->getCond();
-    IfStmtSet thens, elses;
-    GetBranchCandidates(cond, stmts, thens, elses);
-    stmts.erase(ifstmt);
-    if (thens.size() + elses.size() > 1) {
-      for (auto stmt : thens) {
-        substitutions[stmt] = nullptr;
-        stmts.erase(stmt);
+    auto sub = *stmts.begin();
+    stmts.erase(sub);
+    auto lhs = sub;
+    IfStmtSet merged;
+    for (auto rhs : stmts) {
+      if (auto ifstmt = MergeIfStmts(lhs, rhs)) {
+        lhs = ifstmt;
+        merged.insert(rhs);
       }
-      for (auto stmt : elses) {
-        substitutions[stmt] = nullptr;
-        stmts.erase(stmt);
+    }
+    if (lhs != sub) {
+      substitutions[sub] = lhs;
+      for (auto ifstmt : merged) {
+        substitutions[ifstmt] = nullptr;
+        stmts.erase(ifstmt);
       }
-      auto then_body = MergeIfStmtBodies(thens);
-      auto else_body = MergeIfStmtBodies(elses);
-      auto stmt =
-          CreateIfStmt(*ast_ctx, cond, CreateCompoundStmt(*ast_ctx, then_body));
-      stmt->setElse(CreateCompoundStmt(*ast_ctx, else_body));
-      substitutions[ifstmt] = stmt;
     }
   }
 }
@@ -111,7 +154,7 @@ bool CondBasedRefine::VisitCompoundStmt(clang::CompoundStmt *compound) {
   // Create a replacement for `compound`
   std::vector<clang::Stmt *> new_body;
   for (auto stmt : compound->body()) {
-    if (stmt){
+    if (stmt) {
       new_body.push_back(stmt);
     }
   }
