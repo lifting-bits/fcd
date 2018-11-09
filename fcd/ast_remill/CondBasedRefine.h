@@ -41,9 +41,7 @@ class CondBasedRefine : public llvm::ModulePass,
 
   clang::IfStmt *MergeIfStmts(clang::IfStmt *lhs, clang::IfStmt *rhs);
 
-  using IfStmtSet = std::set<clang::IfStmt *>;
-  
-  void CreateIfThenElseStmts(IfStmtSet stmts);
+  void CreateIfThenElseStmts(std::set<clang::IfStmt *> stmts);
 
  public:
   static char ID;

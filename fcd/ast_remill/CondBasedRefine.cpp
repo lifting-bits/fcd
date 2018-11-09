@@ -25,10 +25,8 @@ namespace fcd {
 
 namespace {
 
-using IfStmtSet = std::set<clang::IfStmt *>;
-
-static IfStmtSet GetIfStmts(clang::CompoundStmt *compound) {
-  IfStmtSet result;
+static std::set<clang::IfStmt *> GetIfStmts(clang::CompoundStmt *compound) {
+  std::set<clang::IfStmt *> result;
   for (auto stmt : compound->body()) {
     if (auto ifstmt = llvm::dyn_cast<clang::IfStmt>(stmt)) {
       result.insert(ifstmt);
@@ -123,12 +121,12 @@ clang::IfStmt *CondBasedRefine::MergeIfStmts(clang::IfStmt *lhs,
   return nullptr;
 }
 
-void CondBasedRefine::CreateIfThenElseStmts(IfStmtSet stmts) {
+void CondBasedRefine::CreateIfThenElseStmts(std::set<clang::IfStmt *> stmts) {
   while (!stmts.empty()) {
     auto sub = *stmts.begin();
     stmts.erase(sub);
     auto lhs = sub;
-    IfStmtSet merged;
+    std::set<clang::IfStmt *> merged;
     for (auto rhs : stmts) {
       if (auto ifstmt = MergeIfStmts(lhs, rhs)) {
         lhs = ifstmt;
