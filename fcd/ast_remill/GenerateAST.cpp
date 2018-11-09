@@ -240,7 +240,8 @@ clang::CompoundStmt *GenerateAST::StructureCyclicRegion(llvm::Region *region) {
       auto from = const_cast<llvm::BasicBlock *>(edge.first);
       auto to = const_cast<llvm::BasicBlock *>(edge.second);
       // Create edge condition
-      auto cond = CreateEdgeCond(from, to);
+      auto cond = CreateAndExpr(*ast_ctx, GetOrCreateReachingCond(from),
+                                CreateEdgeCond(from, to));
       // Find the statement corresponding to the exiting block
       auto it =
           std::find(loop_body.begin(), loop_body.end(), block_stmts[from]);
