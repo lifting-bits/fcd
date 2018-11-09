@@ -38,6 +38,10 @@ static std::set<clang::IfStmt *> GetIfStmts(clang::CompoundStmt *compound) {
 static std::vector<z3::expr> SplitClause(z3::expr expr) {
   std::vector<z3::expr> result;
   if (expr.decl().decl_kind() == Z3_OP_AND) {
+    // Make sure we have a flat n-ary `and`
+    if (expr.num_args() == 2) {
+      expr = expr.simplify();
+    }
     for (unsigned i = 0; i < expr.num_args(); ++i) {
       result.push_back(expr.arg(i));
     }
