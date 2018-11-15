@@ -44,22 +44,26 @@ bool NestedScopeCombiner::VisitIfStmt(clang::IfStmt *ifstmt) {
 
 bool NestedScopeCombiner::VisitCompoundStmt(clang::CompoundStmt *compound) {
   // DLOG(INFO) << "VisitCompoundStmt";
-  std::vector<clang::Stmt *> new_body;
-  for (auto stmt : compound->body()) {
-    if (auto child = llvm::dyn_cast<clang::CompoundStmt>(stmt)) {
-      new_body.insert(new_body.end(), child->body_begin(), child->body_end());
-    } else {
-      new_body.push_back(stmt);
+  if (changed) {
+    std::vector<clang::Stmt *> new_body;
+    for (auto stmt : compound->body()) {
+      if (auto child = llvm::dyn_cast<clang::CompoundStmt>(stmt)) {
+        new_body.insert(new_body.end(), child->body_begin(), child->body_end());
+      } else {
+        new_body.push_back(stmt);
+      }
     }
+    substitutions[compound] = CreateCompoundStmt(*ast_ctx, new_body);
   }
-  substitutions[compound] = CreateCompoundStmt(*ast_ctx, new_body);
   return true;
 }
 
 bool NestedScopeCombiner::runOnModule(llvm::Module &module) {
   LOG(INFO) << "Combining nested scopes";
+  changed = false;
+  substitutions.clear();
   TraverseDecl(ast_ctx->getTranslationUnitDecl());
-  return true;
+  return changed;
 }
 
 llvm::ModulePass *createNestedScopeCombinerPass(clang::CompilerInstance &ins,

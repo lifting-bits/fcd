@@ -329,17 +329,30 @@ static bool GeneratePseudocode(llvm::Module& module,
 
   fcd::IRToASTVisitor gen(ins);
 
-  llvm::legacy::PassManager pm;
-  pm.add(fcd::createGenerateASTPass(ins, gen));
-  pm.add(fcd::createDeadStmtElimPass(ins, gen));
-  pm.add(fcd::createZ3CondSimplifyPass(ins, gen));
-  pm.add(fcd::createDeadStmtElimPass(ins, gen));
-  pm.add(fcd::createNestedCondPropPass(ins, gen));
-  pm.add(fcd::createNestedScopeCombinerPass(ins, gen));
-  pm.add(fcd::createCondBasedRefinePass(ins, gen));
-  // pm.add(fcd::createLoopRefinePass(ins, gen));
-  // pm.add(fcd::createZ3CondSimplifyPass(ins, gen));
-  pm.run(module);
+  llvm::legacy::PassManager ast;
+  ast.add(fcd::createGenerateASTPass(ins, gen));
+  ast.add(fcd::createDeadStmtElimPass(ins, gen));
+  // ast.add(fcd::createZ3CondSimplifyPass(ins, gen));
+  // ast.add(fcd::createDeadStmtElimPass(ins, gen));
+  ast.run(module);
+
+  llvm::legacy::PassManager cbr;
+  cbr.add(fcd::createNestedCondPropPass(ins, gen));
+  cbr.add(fcd::createNestedScopeCombinerPass(ins, gen));
+  cbr.add(fcd::createCondBasedRefinePass(ins, gen));
+  while(cbr.run(module));
+
+  llvm::legacy::PassManager loop;
+  loop.add(fcd::createNestedCondPropPass(ins, gen));
+  loop.add(fcd::createNestedScopeCombinerPass(ins, gen));
+  loop.add(fcd::createLoopRefinePass(ins, gen));
+  // while(loop.run(module));
+
+  llvm::legacy::PassManager fin;
+  fin.add(fcd::createZ3CondSimplifyPass(ins, gen));
+  fin.add(fcd::createNestedCondPropPass(ins, gen));
+  fin.add(fcd::createNestedScopeCombinerPass(ins, gen));
+  // fin.run(module);
 
   // ins.getASTContext().getTranslationUnitDecl()->dump();
   ins.getASTContext().getTranslationUnitDecl()->print(llvm::outs());

@@ -60,14 +60,18 @@ bool DeadStmtElim::VisitCompoundStmt(clang::CompoundStmt *compound) {
     }
   }
   // Create the a new compound
-  substitutions[compound] = CreateCompoundStmt(*ast_ctx, new_body);
+  if (changed || new_body.size() < compound->size()) {
+    substitutions[compound] = CreateCompoundStmt(*ast_ctx, new_body);
+  }
   return true;
 }
 
 bool DeadStmtElim::runOnModule(llvm::Module &module) {
   LOG(INFO) << "Eliminating dead statements";
+  changed = false;
+  substitutions.clear();
   TraverseDecl(ast_ctx->getTranslationUnitDecl());
-  return true;
+  return changed;
 }
 
 llvm::ModulePass *createDeadStmtElimPass(clang::CompilerInstance &ins,

@@ -44,13 +44,16 @@ static clang::Expr *CreateBoolBinOp(clang::ASTContext &ctx,
 
 }  // namespace
 
-void ReplaceChildren(clang::Stmt *stmt, StmtMap &repl_map) {
+bool ReplaceChildren(clang::Stmt *stmt, StmtMap &repl_map) {
+  auto change = false;
   for (auto c_it = stmt->child_begin(); c_it != stmt->child_end(); ++c_it) {
     auto s_it = repl_map.find(*c_it);
     if (s_it != repl_map.end()) {
       *c_it = s_it->second;
+      change = true;
     }
   }
+  return change;
 }
 
 clang::IdentifierInfo *CreateIdentifier(clang::ASTContext &ctx,

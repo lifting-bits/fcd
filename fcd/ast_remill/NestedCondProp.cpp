@@ -49,19 +49,6 @@ NestedCondProp::NestedCondProp(clang::CompilerInstance &ins,
 
 bool NestedCondProp::VisitIfStmt(clang::IfStmt *ifstmt) {
   // DLOG(INFO) << "VisitIfStmt";
-  // Retrieve a parent `clang::IfStmt` condition
-  // and remove it from `cond` if it's present.
-  auto iter = parent_conds.find(ifstmt);
-  if (iter != parent_conds.end()) {
-    auto child_expr = z3_gen->GetOrCreateZ3Expr(ifstmt->getCond()).simplify();
-    auto parent_expr = z3_gen->GetOrCreateZ3Expr(iter->second).simplify();
-    z3::expr_vector src(*z3_ctx);
-    z3::expr_vector dst(*z3_ctx);
-    src.push_back(parent_expr);
-    dst.push_back(z3_ctx->bool_val(true));
-    auto sub = child_expr.substitute(src, dst).simplify();
-    ifstmt->setCond(z3_gen->GetOrCreateCExpr(sub));
-  }
   // Determine whether `cond` is a constant expression
   auto cond = ifstmt->getCond();
   if (!cond->isIntegerConstantExpr(*ast_ctx)) {
@@ -86,13 +73,31 @@ bool NestedCondProp::VisitIfStmt(clang::IfStmt *ifstmt) {
       }
     }
   }
+  // Retrieve a parent `clang::IfStmt` condition
+  // and remove it from `cond` if it's present.
+  auto iter = parent_conds.find(ifstmt);
+  if (iter != parent_conds.end()) {
+    auto child_expr = z3_gen->GetOrCreateZ3Expr(ifstmt->getCond()).simplify();
+    auto parent_expr = z3_gen->GetOrCreateZ3Expr(iter->second).simplify();
+    z3::expr_vector src(*z3_ctx);
+    z3::expr_vector dst(*z3_ctx);
+    src.push_back(parent_expr);
+    dst.push_back(z3_ctx->bool_val(true));
+    auto sub = child_expr.substitute(src, dst).simplify();
+    if (!z3::eq(child_expr, sub)) {
+      ifstmt->setCond(z3_gen->GetOrCreateCExpr(sub));
+      changed = true;
+    }
+  }
   return true;
 }
 
 bool NestedCondProp::runOnModule(llvm::Module &module) {
   LOG(INFO) << "Propagating nested conditions";
+  changed = false;
+  parent_conds.clear();
   TraverseDecl(ast_ctx->getTranslationUnitDecl());
-  return true;
+  return changed;
 }
 
 llvm::ModulePass *createNestedCondPropPass(clang::CompilerInstance &ins,

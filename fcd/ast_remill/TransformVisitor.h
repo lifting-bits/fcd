@@ -27,11 +27,12 @@ template <typename Derived>
 class TransformVisitor : public clang::RecursiveASTVisitor<Derived> {
  protected:
   StmtMap substitutions;
+  bool changed;
 
  public:
-  TransformVisitor() {}
+  TransformVisitor() : changed(false) {}
 
-  bool shouldTraversePostOrder() { return true; }
+  virtual bool shouldTraversePostOrder() { return true; }
 
   bool VisitFunctionDecl(clang::FunctionDecl *fdecl) {
     // DLOG(INFO) << "VisitFunctionDecl";
@@ -39,6 +40,7 @@ class TransformVisitor : public clang::RecursiveASTVisitor<Derived> {
       auto iter = substitutions.find(body);
       if (iter != substitutions.end()) {
         fdecl->setBody(iter->second);
+        changed = true;
       }
     }
     return true;
@@ -46,7 +48,7 @@ class TransformVisitor : public clang::RecursiveASTVisitor<Derived> {
 
   bool VisitStmt(clang::Stmt *stmt) {
     // DLOG(INFO) << "VisitStmt";
-    ReplaceChildren(stmt, substitutions);
+    changed |= ReplaceChildren(stmt, substitutions);
     return true;
   }
 };

@@ -24,12 +24,13 @@
 #include <clang/AST/RecursiveASTVisitor.h>
 
 #include "fcd/ast_remill/IRToASTVisitor.h"
+#include "fcd/ast_remill/TransformVisitor.h"
 #include "fcd/ast_remill/Z3ConvVisitor.h"
 
 namespace fcd {
 
 class NestedCondProp : public llvm::ModulePass,
-                       public clang::RecursiveASTVisitor<NestedCondProp> {
+                       public TransformVisitor<NestedCondProp> {
  private:
   clang::ASTContext *ast_ctx;
   fcd::IRToASTVisitor *ast_gen;
@@ -40,6 +41,8 @@ class NestedCondProp : public llvm::ModulePass,
 
  public:
   static char ID;
+
+  bool shouldTraversePostOrder() { return false; }
 
   NestedCondProp(clang::CompilerInstance &ins, fcd::IRToASTVisitor &ast_gen);
 

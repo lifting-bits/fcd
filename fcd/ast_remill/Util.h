@@ -26,7 +26,7 @@ namespace fcd {
 
 using StmtMap = std::unordered_map<clang::Stmt *, clang::Stmt *>;
 
-void ReplaceChildren(clang::Stmt *stmt, StmtMap &repl_map);
+bool ReplaceChildren(clang::Stmt *stmt, StmtMap &repl_map);
 
 clang::IdentifierInfo *CreateIdentifier(clang::ASTContext &ctx,
                                         std::string name);
