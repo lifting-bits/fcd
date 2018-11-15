@@ -36,12 +36,14 @@ class CondBasedRefine : public llvm::ModulePass,
   std::unique_ptr<z3::context> z3_ctx;
   std::unique_ptr<fcd::Z3ConvVisitor> z3_gen;
 
-  z3::expr ThenTest(z3::expr lhs, z3::expr rhs);
-  z3::expr ElseTest(z3::expr lhs, z3::expr rhs);
+  z3::expr GetZ3Cond(clang::IfStmt *ifstmt);
 
-  clang::IfStmt *MergeIfStmts(clang::IfStmt *lhs, clang::IfStmt *rhs);
+  bool ThenTest(z3::expr lhs, z3::expr rhs);
+  bool ElseTest(z3::expr lhs, z3::expr rhs);
 
-  void CreateIfThenElseStmts(std::set<clang::IfStmt *> stmts);
+  using IfStmtSet = std::set<clang::IfStmt *>;
+
+  void CreateIfThenElseStmts(IfStmtSet stmts);
 
  public:
   static char ID;
