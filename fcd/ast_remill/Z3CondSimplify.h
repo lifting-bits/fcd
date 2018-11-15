@@ -22,17 +22,20 @@
 #include <z3++.h>
 
 #include "fcd/ast_remill/IRToASTVisitor.h"
+#include "fcd/ast_remill/TransformVisitor.h"
 #include "fcd/ast_remill/Z3ConvVisitor.h"
 
 namespace fcd {
 
 class Z3CondSimplify : public llvm::ModulePass,
-                       public clang::RecursiveASTVisitor<Z3CondSimplify> {
+                       public TransformVisitor<Z3CondSimplify> {
  private:
   clang::ASTContext *ast_ctx;
   fcd::IRToASTVisitor *ast_gen;
   std::unique_ptr<z3::context> z3_ctx;
   std::unique_ptr<fcd::Z3ConvVisitor> z3_gen;
+
+  z3::tactic z3_simplifier;
 
   clang::Expr *SimplifyCExpr(clang::Expr *c_expr);
 
@@ -40,6 +43,9 @@ class Z3CondSimplify : public llvm::ModulePass,
   static char ID;
 
   Z3CondSimplify(clang::CompilerInstance &ins, fcd::IRToASTVisitor &ast_gen);
+
+  z3::context &GetZ3Context() { return *z3_ctx; }
+  void SetZ3Simplifier(z3::tactic tactic);
 
   bool VisitIfStmt(clang::IfStmt *stmt);
   bool VisitWhileStmt(clang::WhileStmt *loop);
@@ -49,7 +55,7 @@ class Z3CondSimplify : public llvm::ModulePass,
 };
 
 llvm::ModulePass *createZ3CondSimplifyPass(clang::CompilerInstance &ins,
-                                           fcd::IRToASTVisitor &ast_gen);
+                                           fcd::IRToASTVisitor &gen);
 }  // namespace fcd
 
 namespace llvm {

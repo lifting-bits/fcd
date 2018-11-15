@@ -29,24 +29,20 @@ Z3CondSimplify::Z3CondSimplify(clang::CompilerInstance &ins,
       ast_ctx(&ins.getASTContext()),
       ast_gen(&ast_gen),
       z3_ctx(new z3::context()),
-      z3_gen(new fcd::Z3ConvVisitor(ast_ctx, z3_ctx.get())) {}
+      z3_gen(new fcd::Z3ConvVisitor(ast_ctx, z3_ctx.get())),
+      z3_simplifier(*z3_ctx, "simplify") {}
+
+void Z3CondSimplify::SetZ3Simplifier(z3::tactic tactic) {
+  CHECK(&tactic.ctx() == z3_ctx.get());
+  z3_simplifier = tactic;
+} 
 
 clang::Expr *Z3CondSimplify::SimplifyCExpr(clang::Expr *c_expr) {
   auto z3_expr = z3_gen->GetOrCreateZ3Expr(c_expr);
   z3::goal goal(*z3_ctx);
   goal.add(z3_expr);
-  // Custom Z3 bitvector predicate simplifier
-  auto simplify =
-      // Simplify boolean structure with AIGs
-      z3::tactic(*z3_ctx, "aig") &
-      // Propagate bounds over bit-vectors
-      z3::tactic(*z3_ctx, "propagate-bv-bounds") &
-      // Tseitin transformation
-      z3::tactic(*z3_ctx, "tseitin-cnf") &
-      // Contextual simplification
-      z3::tactic(*z3_ctx, "ctx-simplify");
-  // Apply on condition
-  auto app = simplify(goal);
+  // Apply on `z3_simplifier` on condition
+  auto app = z3_simplifier(goal);
   CHECK(app.size() == 1) << "Unexpected multiple goals in application!";
   auto z3_result = app[0].as_expr().simplify();
   return z3_gen->GetOrCreateCExpr(z3_result);
@@ -69,8 +65,9 @@ bool Z3CondSimplify::VisitDoStmt(clang::DoStmt *loop) {
 
 bool Z3CondSimplify::runOnModule(llvm::Module &module) {
   LOG(INFO) << "Simplifying conditions using Z3";
+  Initialize();
   TraverseDecl(ast_ctx->getTranslationUnitDecl());
-  return true;
+  return changed;
 }
 
 llvm::ModulePass *createZ3CondSimplifyPass(clang::CompilerInstance &ins,
