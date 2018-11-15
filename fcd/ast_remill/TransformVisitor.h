@@ -34,6 +34,11 @@ class TransformVisitor : public clang::RecursiveASTVisitor<Derived> {
 
   virtual bool shouldTraversePostOrder() { return true; }
 
+  void Initialize() {
+    changed = false;
+    substitutions.clear();
+  }
+
   bool VisitFunctionDecl(clang::FunctionDecl *fdecl) {
     // DLOG(INFO) << "VisitFunctionDecl";
     if (auto body = fdecl->getBody()) {

@@ -60,8 +60,7 @@ bool NestedScopeCombiner::VisitCompoundStmt(clang::CompoundStmt *compound) {
 
 bool NestedScopeCombiner::runOnModule(llvm::Module &module) {
   LOG(INFO) << "Combining nested scopes";
-  changed = false;
-  substitutions.clear();
+  Initialize();
   TraverseDecl(ast_ctx->getTranslationUnitDecl());
   return changed;
 }

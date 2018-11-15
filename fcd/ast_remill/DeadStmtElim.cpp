@@ -68,8 +68,7 @@ bool DeadStmtElim::VisitCompoundStmt(clang::CompoundStmt *compound) {
 
 bool DeadStmtElim::runOnModule(llvm::Module &module) {
   LOG(INFO) << "Eliminating dead statements";
-  changed = false;
-  substitutions.clear();
+  Initialize();
   TraverseDecl(ast_ctx->getTranslationUnitDecl());
   return changed;
 }

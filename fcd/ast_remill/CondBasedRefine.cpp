@@ -179,8 +179,7 @@ bool CondBasedRefine::VisitCompoundStmt(clang::CompoundStmt *compound) {
 
 bool CondBasedRefine::runOnModule(llvm::Module &module) {
   LOG(INFO) << "Condition-based refinement";
-  changed = false;
-  substitutions.clear();
+  Initialize();
   TraverseDecl(ast_ctx->getTranslationUnitDecl());
   return changed;
 }
