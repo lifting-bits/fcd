@@ -21,6 +21,8 @@
 #include <llvm/Analysis/RegionInfo.h>
 #include <llvm/IR/Module.h>
 
+#include <unordered_set>
+
 #include "fcd/ast_remill/IRToASTVisitor.h"
 
 namespace fcd {
@@ -33,14 +35,21 @@ class GenerateAST : public llvm::ModulePass {
   std::unordered_map<llvm::BasicBlock *, clang::IfStmt *> block_stmts;
   std::unordered_map<llvm::Region *, clang::CompoundStmt *> region_stmts;
 
+  llvm::DominatorTree *domtree;
   llvm::RegionInfo *regions;
   llvm::LoopInfo *loops;
+
   std::vector<llvm::BasicBlock *> rpo_walk;
 
   clang::Expr *CreateEdgeCond(llvm::BasicBlock *from, llvm::BasicBlock *to);
   clang::Expr *GetOrCreateReachingCond(llvm::BasicBlock *block);
   std::vector<clang::Stmt *> CreateBasicBlockStmts(llvm::BasicBlock *block);
   std::vector<clang::Stmt *> CreateRegionStmts(llvm::Region *region);
+
+  using BBSet = std::unordered_set<llvm::BasicBlock *>;
+
+  void RefineLoopSuccessors(llvm::Loop *loop, BBSet &members,
+                            BBSet &successors);
 
   clang::CompoundStmt *StructureAcyclicRegion(llvm::Region *region);
   clang::CompoundStmt *StructureCyclicRegion(llvm::Region *region);

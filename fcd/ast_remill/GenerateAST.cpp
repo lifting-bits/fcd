@@ -25,7 +25,6 @@
 #include <clang/AST/Expr.h>
 
 #include <algorithm>
-#include <unordered_set>
 #include <vector>
 
 #include "remill/BC/Util.h"
@@ -37,7 +36,7 @@ namespace fcd {
 
 namespace {
 
-using BBEdge = std::pair<const llvm::BasicBlock *, const llvm::BasicBlock *>;
+using BBEdge = std::pair<llvm::BasicBlock *, llvm::BasicBlock *>;
 using BBGraph =
     std::unordered_map<llvm::BasicBlock *, std::vector<llvm::BasicBlock *>>;
 
@@ -204,6 +203,44 @@ std::vector<clang::Stmt *> GenerateAST::CreateRegionStmts(
   return result;
 }
 
+void GenerateAST::RefineLoopSuccessors(llvm::Loop *loop, BBSet &members,
+                                       BBSet &successors) {
+  // Initialize loop members
+  members.insert(loop->block_begin(), loop->block_end());
+  // Initialize loop successors
+  llvm::SmallVector<llvm::BasicBlock *, 1> exits;
+  loop->getExitBlocks(exits);
+  successors.insert(exits.begin(), exits.end());
+  // Loop membership test
+  auto IsLoopMember = [&members](llvm::BasicBlock *block) {
+    return members.count(block) > 0;
+  };
+  // Refinement
+  auto new_blocks = successors;
+  while (successors.size() > 1 && !new_blocks.empty()) {
+    new_blocks.clear();
+    for (auto block : successors) {
+      // Check if all predecessors of `block` are loop members
+      if (std::all_of(llvm::pred_begin(block), llvm::pred_end(block),
+                      IsLoopMember)) {
+        // Add `block` as a loop member
+        members.insert(block);
+        // Remove it as a loop successor
+        successors.erase(block);
+        // Add a successor of `block` to the set of discovered blocks if
+        // if it is not a loop member and if the loop header dominates it.
+        auto header = loop->getHeader();
+        for (auto succ : llvm::successors(block)) {
+          if (!IsLoopMember(succ) && domtree->dominates(header, succ)) {
+            new_blocks.insert(succ);
+          }
+        }
+      }
+    }
+    successors.insert(new_blocks.begin(), new_blocks.end());
+  }
+}
+
 clang::CompoundStmt *GenerateAST::StructureAcyclicRegion(llvm::Region *region) {
   DLOG(INFO) << "Region " << region->getNameStr() << " is acyclic";
   auto region_body = CreateRegionStmts(region);
@@ -220,10 +257,13 @@ clang::CompoundStmt *GenerateAST::StructureCyclicRegion(llvm::Region *region) {
   // a recognized natural loop. Cyclic regions may only be fragments
   // of a larger loop structure.
   if (loop) {
+    // Refine loop members and successors without invalidating LoopInfo
+    BBSet members, successors;
+    RefineLoopSuccessors(loop, members, successors);
     // Construct the initial loop body
     std::vector<clang::Stmt *> loop_body;
     for (auto block : rpo_walk) {
-      if (loop->contains(block)) {
+      if (members.count(block)) {
         if (IsRegionBlock(region, block) || IsSubregionEntry(region, block)) {
           auto stmt = block_stmts[block];
           auto it = std::find(region_body.begin(), region_body.end(), stmt);
@@ -232,13 +272,19 @@ clang::CompoundStmt *GenerateAST::StructureCyclicRegion(llvm::Region *region) {
         }
       }
     }
-    // Get loop exit blocks
-    llvm::SmallVector<BBEdge, 2> exits;
-    loop->getExitEdges(exits);
+    // Get loop exit edges
+    std::vector<BBEdge> exits;
+    for (auto succ : successors) {
+      for (auto pred : llvm::predecessors(succ)) {
+        if (members.count(pred)) {
+          exits.push_back({pred, succ});
+        }
+      }
+    }
     // Insert `break` statements
     for (auto edge : exits) {
-      auto from = const_cast<llvm::BasicBlock *>(edge.first);
-      auto to = const_cast<llvm::BasicBlock *>(edge.second);
+      auto from = edge.first;
+      auto to = edge.second;
       // Create edge condition
       auto cond = CreateAndExpr(*ast_ctx, GetOrCreateReachingCond(from),
                                 CreateEdgeCond(from, to));
@@ -292,6 +338,7 @@ GenerateAST::GenerateAST(clang::CompilerInstance &ins,
       ast_gen(&ast_gen) {}
 
 void GenerateAST::getAnalysisUsage(llvm::AnalysisUsage &usage) const {
+  usage.addRequired<llvm::DominatorTreeWrapperPass>();
   usage.addRequired<llvm::RegionInfoPass>();
   usage.addRequired<llvm::LoopInfoWrapperPass>();
 }
@@ -307,6 +354,8 @@ bool GenerateAST::runOnModule(llvm::Module &module) {
 
   for (auto &func : module.functions()) {
     if (!func.isDeclaration()) {
+      // Get dominator tree
+      domtree = &getAnalysis<llvm::DominatorTreeWrapperPass>(func).getDomTree();
       // Get single-entry, single-exit regions
       regions = &getAnalysis<llvm::RegionInfoPass>(func).getRegionInfo();
       // Get loops
