@@ -32,11 +32,6 @@ Z3CondSimplify::Z3CondSimplify(clang::CompilerInstance &ins,
       z3_gen(new fcd::Z3ConvVisitor(ast_ctx, z3_ctx.get())),
       z3_simplifier(*z3_ctx, "simplify") {}
 
-void Z3CondSimplify::SetZ3Simplifier(z3::tactic tactic) {
-  CHECK(&tactic.ctx() == z3_ctx.get());
-  z3_simplifier = tactic;
-} 
-
 clang::Expr *Z3CondSimplify::SimplifyCExpr(clang::Expr *c_expr) {
   auto z3_expr = z3_gen->GetOrCreateZ3Expr(c_expr);
   z3::goal goal(*z3_ctx);

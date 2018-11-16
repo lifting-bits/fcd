@@ -45,7 +45,8 @@ class Z3CondSimplify : public llvm::ModulePass,
   Z3CondSimplify(clang::CompilerInstance &ins, fcd::IRToASTVisitor &ast_gen);
 
   z3::context &GetZ3Context() { return *z3_ctx; }
-  void SetZ3Simplifier(z3::tactic tactic);
+  
+  void SetZ3Simplifier(z3::tactic tactic) { z3_simplifier = tactic; };
 
   bool VisitIfStmt(clang::IfStmt *stmt);
   bool VisitWhileStmt(clang::WhileStmt *loop);
