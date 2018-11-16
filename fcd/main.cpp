@@ -332,10 +332,7 @@ static bool GeneratePseudocode(llvm::Module& module,
   llvm::legacy::PassManager ast;
   ast.add(fcd::createGenerateASTPass(ins, gen));
   ast.add(fcd::createDeadStmtElimPass(ins, gen));
-  // ast.add(fcd::createZ3CondSimplifyPass(ins, gen));
-  // ast.add(fcd::createDeadStmtElimPass(ins, gen));
   ast.run(module);
-
   
   // Simplifier to use during condition-based refinement
   auto cbr_simplifier = new fcd::Z3CondSimplify(ins, gen);
@@ -353,10 +350,8 @@ static bool GeneratePseudocode(llvm::Module& module,
   while (cbr.run(module));
 
   llvm::legacy::PassManager loop;
-  loop.add(fcd::createNestedCondPropPass(ins, gen));
-  loop.add(fcd::createNestedScopeCombinerPass(ins, gen));
   loop.add(fcd::createLoopRefinePass(ins, gen));
-  // while(loop.run(module));
+  while(loop.run(module));
 
   // Simplifier to use during final refinement
   auto fin_simplifier = new fcd::Z3CondSimplify(ins, gen);
@@ -374,6 +369,7 @@ static bool GeneratePseudocode(llvm::Module& module,
   fin.add(fin_simplifier);
   fin.add(fcd::createNestedCondPropPass(ins, gen));
   fin.add(fcd::createNestedScopeCombinerPass(ins, gen));
+  fin.add(fcd::createDeadStmtElimPass(ins, gen));
   fin.run(module);
 
   // ins.getASTContext().getTranslationUnitDecl()->dump();
