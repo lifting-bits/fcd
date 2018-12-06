@@ -55,17 +55,17 @@ static const auto comp_break =
 class WhileRule : public InferenceRule<clang::WhileStmt, clang::WhileStmt> {
  public:
   WhileRule()
-      : InferenceRule(forEachDescendant(ifStmt(
-            stmt().bind("if"), hasThen(comp_break),
-            hasParent(compoundStmt(
-                stmt().bind("body"),
-                hasParent(whileStmt(stmt().bind("while"), cond_true))))))) {}
+      : InferenceRule(whileStmt(
+            stmt().bind("while"), cond_true,
+            hasBody(compoundStmt(
+                has(ifStmt(stmt().bind("if"), hasThen(comp_break))))))) {}
 
   void run(const MatchFinder::MatchResult &result) {
-    auto if_break = result.Nodes.getNodeAs<clang::IfStmt>("if");
-    auto loop_body = result.Nodes.getNodeAs<clang::CompoundStmt>("body");
-    if (loop_body->body_front() == if_break) {
-      match = result.Nodes.getNodeAs<clang::WhileStmt>("while");
+    auto loop = result.Nodes.getNodeAs<clang::WhileStmt>("while");
+    auto body = llvm::cast<clang::CompoundStmt>(loop->getBody());
+    auto ifstmt = result.Nodes.getNodeAs<clang::IfStmt>("if");
+    if (body->body_front() == ifstmt) {
+      match = loop;
     }
   }
 
@@ -73,6 +73,7 @@ class WhileRule : public InferenceRule<clang::WhileStmt, clang::WhileStmt> {
                                             clang::WhileStmt *loop) {
     CHECK(loop == match)
         << "Substituted WhileStmt is not the matched WhileStmt!";
+
     auto comp = llvm::cast<clang::CompoundStmt>(loop->getBody());
     auto cond = llvm::cast<clang::IfStmt>(comp->body_back())->getCond();
     std::vector<clang::Stmt *> new_body(comp->body_begin() + 1,
@@ -86,17 +87,17 @@ class WhileRule : public InferenceRule<clang::WhileStmt, clang::WhileStmt> {
 class DoWhileRule : public InferenceRule<clang::WhileStmt, clang::DoStmt> {
  public:
   DoWhileRule()
-      : InferenceRule(forEachDescendant(ifStmt(
-            stmt().bind("if"), hasThen(comp_break),
-            hasParent(compoundStmt(
-                stmt().bind("body"),
-                hasParent(whileStmt(stmt().bind("while"), cond_true))))))) {}
+      : InferenceRule(whileStmt(
+            stmt().bind("while"), cond_true,
+            hasBody(compoundStmt(
+                has(ifStmt(stmt().bind("if"), hasThen(comp_break))))))) {}
 
   void run(const MatchFinder::MatchResult &result) {
-    auto if_break = result.Nodes.getNodeAs<clang::IfStmt>("if");
-    auto loop_body = result.Nodes.getNodeAs<clang::CompoundStmt>("body");
-    if (loop_body->body_back() == if_break) {
-      match = result.Nodes.getNodeAs<clang::WhileStmt>("while");
+    auto loop = result.Nodes.getNodeAs<clang::WhileStmt>("while");
+    auto body = llvm::cast<clang::CompoundStmt>(loop->getBody());
+    auto ifstmt = result.Nodes.getNodeAs<clang::IfStmt>("if");
+    if (body->body_back() == ifstmt) {
+      match = loop;
     }
   }
 
@@ -104,6 +105,7 @@ class DoWhileRule : public InferenceRule<clang::WhileStmt, clang::DoStmt> {
                                          clang::WhileStmt *loop) {
     CHECK(loop == match)
         << "Substituted WhileStmt is not the matched WhileStmt!";
+
     auto comp = llvm::cast<clang::CompoundStmt>(loop->getBody());
     auto cond = llvm::cast<clang::IfStmt>(comp->body_back())->getCond();
     std::vector<clang::Stmt *> new_body(comp->body_begin(),
@@ -111,6 +113,63 @@ class DoWhileRule : public InferenceRule<clang::WhileStmt, clang::DoStmt> {
 
     return CreateDoStmt(ctx, CreateNotExpr(ctx, cond),
                         CreateCompoundStmt(ctx, new_body));
+  }
+};
+
+class LoopToSeq : public InferenceRule<clang::WhileStmt, clang::CompoundStmt> {
+ public:
+  LoopToSeq()
+      : InferenceRule(
+            whileStmt(stmt().bind("while"), cond_true,
+                      hasBody(compoundStmt(hasAnySubstatement(anyOf(
+                          ifStmt(stmt().bind("if"), hasThen(has(breakStmt())),
+                                 hasElse(has(breakStmt()))),
+                          breakStmt())))))) {}
+
+  void run(const MatchFinder::MatchResult &result) {
+    auto loop = result.Nodes.getNodeAs<clang::WhileStmt>("while");
+    if (auto ifstmt = result.Nodes.getNodeAs<clang::IfStmt>("if")) {
+      auto body = llvm::cast<clang::CompoundStmt>(loop->getBody());
+      if (body->body_back() == ifstmt) {
+        match = loop;
+      }
+    } else {
+      match = loop;
+    }
+  }
+
+  clang::CompoundStmt *GetOrCreateSubstitution(clang::ASTContext &ctx,
+                                               clang::WhileStmt *loop) {
+    CHECK(loop == match)
+        << "Substituted WhileStmt is not the matched WhileStmt!";
+
+    auto loop_body = llvm::cast<clang::CompoundStmt>(loop->getBody());
+    
+    std::vector<clang::Stmt *> new_body(loop_body->body_begin(),
+                                        loop_body->body_end());
+
+    if (auto ifstmt = llvm::dyn_cast<clang::IfStmt>(loop_body->body_back())) {
+      std::vector<clang::Stmt *> branches(
+          {ifstmt->getThen(), ifstmt->getElse()});
+      for (auto &branch : branches) {
+        std::vector<clang::Stmt *> new_branch_body;
+        if (auto branch_body = llvm::dyn_cast<clang::CompoundStmt>(branch)) {
+          for (auto stmt : branch_body->body()) {
+            if (llvm::isa<clang::BreakStmt>(stmt)) {
+              break;
+            }
+            new_branch_body.push_back(stmt);
+          }
+        }
+        branch = CreateCompoundStmt(ctx, new_branch_body);
+      }
+      ifstmt->setThen(branches[0]);
+      ifstmt->setElse(branches[1]);
+    } else {
+      new_body.pop_back();
+    }
+
+    return CreateCompoundStmt(ctx, new_body);
   }
 };
 
@@ -133,6 +192,7 @@ class CondToSeqRule : public InferenceRule<clang::WhileStmt, clang::WhileStmt> {
                                             clang::WhileStmt *loop) {
     CHECK(loop == match)
         << "Substituted WhileStmt is not the matched WhileStmt!";
+
     auto body = llvm::cast<clang::CompoundStmt>(loop->getBody());
     auto ifstmt = llvm::cast<clang::IfStmt>(body->body_front());
     auto inner_loop =
@@ -167,6 +227,7 @@ class CondToSeqNegRule
                                             clang::WhileStmt *loop) {
     CHECK(loop == match)
         << "Substituted WhileStmt is not the matched WhileStmt!";
+
     auto body = llvm::cast<clang::CompoundStmt>(loop->getBody());
     auto ifstmt = llvm::cast<clang::IfStmt>(body->body_front());
     auto cond = CreateNotExpr(ctx, ifstmt->getCond());
@@ -203,6 +264,9 @@ bool LoopRefine::VisitWhileStmt(clang::WhileStmt *loop) {
   CondToSeqNegRule cond_to_seqn_r;
   finder.addMatcher(cond_to_seqn_r.GetCondition(), &cond_to_seqn_r);
 
+  LoopToSeq loop_to_seq_r;
+  finder.addMatcher(loop_to_seq_r.GetCondition(), &loop_to_seq_r);
+
   WhileRule while_r;
   finder.addMatcher(while_r.GetCondition(), &while_r);
 
@@ -216,6 +280,8 @@ bool LoopRefine::VisitWhileStmt(clang::WhileStmt *loop) {
     sub = cond_to_seq_r.GetOrCreateSubstitution(*ast_ctx, loop);
   } else if (cond_to_seqn_r) {
     sub = cond_to_seqn_r.GetOrCreateSubstitution(*ast_ctx, loop);
+  } else if (loop_to_seq_r) {
+    sub = loop_to_seq_r.GetOrCreateSubstitution(*ast_ctx, loop);
   } else if (while_r) {
     sub = while_r.GetOrCreateSubstitution(*ast_ctx, loop);
   } else if (do_while_r) {
