@@ -44,17 +44,21 @@ bool NestedScopeCombiner::VisitIfStmt(clang::IfStmt *ifstmt) {
 
 bool NestedScopeCombiner::VisitCompoundStmt(clang::CompoundStmt *compound) {
   // DLOG(INFO) << "VisitCompoundStmt";
-  if (changed) {
-    std::vector<clang::Stmt *> new_body;
-    for (auto stmt : compound->body()) {
-      if (auto child = llvm::dyn_cast<clang::CompoundStmt>(stmt)) {
-        new_body.insert(new_body.end(), child->body_begin(), child->body_end());
-      } else {
-        new_body.push_back(stmt);
-      }
+  bool has_compound = false;
+  std::vector<clang::Stmt *> new_body;
+  for (auto stmt : compound->body()) {
+    if (auto child = llvm::dyn_cast<clang::CompoundStmt>(stmt)) {
+      new_body.insert(new_body.end(), child->body_begin(), child->body_end());
+      has_compound = true;
+    } else {
+      new_body.push_back(stmt);
     }
+  }
+  
+  if (has_compound) {
     substitutions[compound] = CreateCompoundStmt(*ast_ctx, new_body);
   }
+  
   return true;
 }
 
