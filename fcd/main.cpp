@@ -351,6 +351,7 @@ static bool GeneratePseudocode(llvm::Module& module,
 
   llvm::legacy::PassManager loop;
   loop.add(fcd::createLoopRefinePass(ins, gen));
+  loop.add(fcd::createNestedScopeCombinerPass(ins, gen));
   while(loop.run(module));
 
   // Simplifier to use during final refinement
