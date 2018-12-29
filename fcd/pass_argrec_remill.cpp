@@ -235,12 +235,16 @@ static std::string TrimPrefix(std::string str) {
   return ref.str();
 }
 
+template<class F>
 static void UpdateCalls(llvm::Function *old_func, llvm::Function *new_func,
-                        CallingConvention &cc) {
+                        CallingConvention &cc, F const & is_old_func) {
   llvm::IRBuilder<> ir(new_func->getContext());
+  llvm::Value* undef = llvm::UndefValue::get(old_func->getType());
   for (auto old_call : remill::CallersOf(old_func)) {
     auto caller = old_call->getParent()->getParent();
-    if (caller->getName().startswith(sPrefix)) {
+    if (is_old_func(caller)) {
+      old_call->setCalledFunction(undef);
+    } else {
       ir.SetInsertPoint(old_call);
       std::vector<llvm::Value *> params;
       for (auto &arg : new_func->args()) {
@@ -374,7 +378,7 @@ void RemillArgumentRecovery::getAnalysisUsage(
     llvm::AnalysisUsage &usage) const {}
 
 bool RemillArgumentRecovery::runOnModule(llvm::Module &module) {
-  std::vector<llvm::Function *> new_funcs;
+  std::unordered_map<llvm::Function *, llvm::Function*> funcs;
   for (auto &func : module) {
     if (IsLiftedFunction(&func)) {
       // Recover the argument and return types of `func` by
@@ -403,25 +407,27 @@ bool RemillArgumentRecovery::runOnModule(llvm::Module &module) {
       // convention defines which return register to use.
       LoadReturnRegToRetInsts(cc_func, cc);
 
-      new_funcs.push_back(cc_func);
+      funcs[&func] = cc_func;
     }
   }
 
-  for (auto func : new_funcs) {
+  for (auto func_pair : funcs) {
     // Replace all uses of the old function with the new
     // one with the recovered parameter and return types.
     // Then delete the old function from the module.
-    auto name = TrimPrefix(func->getName());
-    auto old_func = remill::FindFunction(&module, name);
-    UpdateCalls(old_func, func, cc);
-    for (auto &arg : func->args()) {
+    llvm::Function* old_func = func_pair.first;
+    llvm::Function* new_func = func_pair.second;
+    auto is_old_func = [&](llvm::Function* f) { return funcs.find(f) != funcs.end(); };
+    UpdateCalls(old_func, new_func, cc, is_old_func);
+    for (auto &arg : new_func->args()) {
       auto arg_name = TrimPrefix(arg.getName());
-      auto var = remill::FindVarInFunction(func, arg_name);
+      auto var = remill::FindVarInFunction(new_func, arg_name);
       arg.takeName(var);
       removeAttr(arg, llvm::Attribute::Dereferenceable);
     }
-    func->takeName(old_func);
+    assert(old_func->use_empty());
     old_func->replaceAllUsesWith(llvm::UndefValue::get(old_func->getType()));
+    new_func->takeName(old_func);
     old_func->eraseFromParent();
   }
 
