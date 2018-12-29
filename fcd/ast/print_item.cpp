@@ -28,6 +28,8 @@ namespace
 	}
 }
 
+PrintableItem::~PrintableItem() {}
+
 void PrintableItem::dump() const
 {
 	print(errs(), 0);
