@@ -279,11 +279,9 @@ RemillTranslationContext::RemillTranslationContext(llvm::LLVMContext &ctx,
   target_arch = remill::GetTargetArch();
   module = std::unique_ptr<llvm::Module>(remill::LoadTargetSemantics(&ctx));
   target_arch->PrepareModule(module);
-  auto word_type = llvm::Type::getIntNTy(
-      module->getContext(), static_cast<unsigned>(target_arch->address_size));
+  
   intrinsics = std::make_unique<remill::IntrinsicTable>(module.get());
-  lifter =
-      std::make_unique<remill::InstructionLifter>(word_type, intrinsics.get());
+  lifter = std::make_unique<remill::InstructionLifter>(target_arch, intrinsics.get());
 }
 
 uint64_t RemillTranslationContext::FindFunctionAddr(llvm::Function *func) {
