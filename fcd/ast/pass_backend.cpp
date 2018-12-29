@@ -851,7 +851,7 @@ bool AstBackEnd::runOnModule(llvm::Module &m)
 	}
 	
 	// sort outputNodes by virtual address, then by name
-	sort(outputNodes.begin(), outputNodes.end(), [](unique_ptr<FunctionNode>& a, unique_ptr<FunctionNode>& b)
+	std::sort(outputNodes.begin(), outputNodes.end(), [](unique_ptr<FunctionNode>& a, unique_ptr<FunctionNode>& b)
 	{
 		auto virtA = getVirtualAddress(*a);
 		auto virtB = getVirtualAddress(*b);
