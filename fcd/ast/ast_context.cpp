@@ -173,7 +173,10 @@ public:
 		
 		if (auto expression = dyn_cast<ConstantExpr>(&constant))
 		{
-			return ctx.uncachedExpressionFor(*expression->getAsInstruction());
+      auto inst = expression->getAsInstruction();
+      auto res = ctx.uncachedExpressionFor(*inst);
+      inst->deleteValue();
+      return res;
 		}
 		
 		if (auto structure = dyn_cast<ConstantStruct>(&constant))

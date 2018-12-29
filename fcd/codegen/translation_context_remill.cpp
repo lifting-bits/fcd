@@ -557,6 +557,7 @@ const StubInfo *RemillTranslationContext::GetStubInfo(
         if (auto int2ptr = llvm::dyn_cast<llvm::IntToPtrInst>(inst)) {
           addr = llvm::dyn_cast<llvm::ConstantInt>(int2ptr->getOperand(0));
         }
+        inst->deleteValue();
       } else {
         addr = llvm::dyn_cast<llvm::ConstantInt>(read_op);
       }
