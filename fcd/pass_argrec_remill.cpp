@@ -339,12 +339,13 @@ static void ConvertRemillArgsToLocals(llvm::Function *func) {
 
   ir.SetInsertPoint(loc_mem);
 
-  auto pc_type = remill::AddressType(module);
+  //auto pc_type = remill::AddressType(module);
   auto arg_pc = remill::NthArgument(func, remill::kPCArgNum);
-  auto loc_pc = ir.CreateAlloca(pc_type, nullptr, "loc_pc");
-  arg_pc->replaceAllUsesWith(loc_pc);
+  assert(arg_pc->use_empty());
+//  auto loc_pc = ir.CreateAlloca(pc_type, nullptr, "loc_pc");
+//  arg_pc->replaceAllUsesWith(loc_pc);
 
-  ir.SetInsertPoint(loc_pc);
+//  ir.SetInsertPoint(loc_pc);
 
   auto state_type = remill::StatePointerType(module)->getElementType();
   auto arg_state = remill::NthArgument(func, remill::kStatePointerArgNum);
