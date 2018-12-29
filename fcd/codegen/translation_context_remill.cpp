@@ -23,6 +23,8 @@
 #include <llvm/IR/Verifier.h>
 
 #include <llvm/Analysis/AliasAnalysis.h>
+#include <llvm/Transforms/Utils.h>
+#include <llvm/Transforms/InstCombine/InstCombine.h>
 
 #include <sstream>
 #include <string>
