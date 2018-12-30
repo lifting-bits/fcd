@@ -383,11 +383,11 @@ bool RemillArgumentRecovery::runOnModule(llvm::Module &module) {
     llvm::Function* new_func = func_pair.second;
     auto is_old_func = [&](llvm::Function* f) { return funcs.find(f) != funcs.end(); };
     UpdateCalls(old_func, new_func, cc, is_old_func);
-    for (auto &arg : new_func->args()) {
-      auto arg_name = TrimPrefix(arg.getName());
-      auto var = remill::FindVarInFunction(new_func, arg_name);
-      arg.takeName(var);
-    }
+//    for (auto &arg : new_func->args()) {
+//      auto arg_name = TrimPrefix(arg.getName());
+//      auto var = remill::FindVarInFunction(new_func, arg_name);
+//      arg.takeName(var);
+//    }
     assert(old_func->use_empty());
     old_func->replaceAllUsesWith(llvm::UndefValue::get(old_func->getType()));
     new_func->takeName(old_func);
