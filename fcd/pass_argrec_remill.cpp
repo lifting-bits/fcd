@@ -115,51 +115,25 @@ static std::unordered_set<const char *> RegisterAliasSet(const char *reg) {
   return result;
 }
 
-static std::unordered_set<llvm::User *> UsersOfVar(llvm::Function *func,
-                                                   llvm::Value *var) {
-  std::unordered_set<llvm::User *> result;
-  if (var->hasNUsesOrMore(2)) {
+static std::unordered_map<llvm::User*, const char *> UsesOfReg(llvm::Function *func, const char *reg) {
+  std::unordered_map<llvm::User*, const char *> result;
+  for (auto alias : RegisterAliasSet(reg)) {
+    auto var = remill::FindVarInFunction(func, alias);
     for (auto var_user : var->users()) {
-      if (auto addr = llvm::dyn_cast<llvm::LoadInst>(var_user)) {
-        for (auto addr_user : addr->users()) {
-          result.insert(addr_user);
-        }
-      }
+      result[var_user] = alias;
     }
   }
   return result;
 }
 
-template <typename T>
-static llvm::User *FirstUserOfVar(llvm::Function *func, llvm::Value *var,
-                                  T &instruction_list) {
-  auto users = UsersOfVar(func, var);
-  if (!users.empty()) {
-    for (auto &inst : instruction_list) {
-      if (users.count(&inst) > 0) {
-        return &inst;
-      }
-    }
-  }
-  return nullptr;
-}
-
-template <typename T>
-static std::pair<llvm::User *, const char *> FirstUserOfReg(
-    llvm::Function *func, const char *reg, T &instruction_list) {
-  std::unordered_map<llvm::User *, const char *> users;
-  for (auto alias : RegisterAliasSet(reg)) {
-    auto var = remill::FindVarInFunction(func, alias);
-    if (auto user = FirstUserOfVar(func, var, instruction_list)) {
-      users[user] = alias;
-    }
-  }
-
-  if (!users.empty()) {
-    for (auto &inst : instruction_list) {
-      auto it = users.find(&inst);
-      if (it != users.end()) {
-        return *it;
+template <typename InstType, typename T>
+static std::pair<InstType *, const char *> FirstRegUser(llvm::Function *func, const char *reg, T &instruction_list) {
+  auto uses = UsesOfReg(func, reg);
+  for (auto &inst : instruction_list) {
+    if (auto typedInst = llvm::dyn_cast<InstType>(&inst)) {
+      auto it = uses.find(&inst);
+      if (it != uses.end())  {
+        return std::make_pair(typedInst, it->second);
       }
     }
   }
@@ -188,11 +162,9 @@ static llvm::Type *RecoverRetType(llvm::Function *func, CallingConvention &cc) {
   for (auto block : TerminalBlocksOf(func)) {
     auto ilist = llvm::make_range(block->rbegin(), block->rend());
     for (auto reg : ret_regs) {
-      auto user = FirstUserOfReg(func, reg, ilist);
+      auto user = FirstRegUser<llvm::StoreInst>(func, reg, ilist);
       if (user.first != nullptr) {
-        if (auto store = llvm::dyn_cast<llvm::StoreInst>(user.first)) {
-          found_types.insert(store->getValueOperand()->getType());
-        }
+        found_types.insert(user.first->getValueOperand()->getType());
       }
     }
   }
@@ -213,7 +185,7 @@ static void LoadReturnRegToRetInsts(llvm::Function *func,
     for (auto block : TerminalBlocksOf(func)) {
       auto term = block->getTerminator();
       ir.SetInsertPoint(term);
-      auto val = ir.CreateLoad(ir.CreateLoad(var));
+      auto val = ir.CreateLoad(var);
       ir.CreateRet(val);
       term->eraseFromParent();
     }
@@ -250,7 +222,7 @@ static void UpdateCalls(llvm::Function *old_func, llvm::Function *new_func,
       for (auto &arg : new_func->args()) {
         auto name = TrimPrefix(arg.getName().str());
         auto arg_var = remill::FindVarInFunction(caller, name);
-        params.push_back(ir.CreateLoad(ir.CreateLoad(arg_var)));
+        params.push_back(ir.CreateLoad(arg_var));
       }
 
       auto new_call = ir.CreateCall(new_func, params);
@@ -259,7 +231,7 @@ static void UpdateCalls(llvm::Function *old_func, llvm::Function *new_func,
       if (!ret_type->isVoidTy()) {
         auto ret_reg = cc.ReturnRegForType(ret_type);
         auto ret_var = remill::FindVarInFunction(caller, ret_reg);
-        ir.CreateStore(new_call, ir.CreateLoad(ret_var));
+        ir.CreateStore(new_call, ret_var);
       }
       old_call->replaceAllUsesWith(
           old_call->getArgOperand(remill::kMemoryPointerArgNum));
@@ -270,30 +242,21 @@ static void UpdateCalls(llvm::Function *old_func, llvm::Function *new_func,
 
 static llvm::Function *DeclareParametrizedFunc(llvm::Function *func,
                                                CallingConvention &cc) {
+  
   std::vector<const char *> used_regs;
+  std::vector<llvm::Type *> params;
+  
   // Get parameter regs from the callconv. Also add the stack pointer reg,
   // since it's used to access parameters passed by stack. Also add aliases.
   auto cc_regs = cc.ParamRegs();
   auto ilist = llvm::make_range(llvm::inst_begin(func), llvm::inst_end(func));
   cc_regs.insert(cc_regs.begin(), cc.StackPointerVarName());
   for (auto reg : cc_regs) {
-    auto user = FirstUserOfReg(func, reg, ilist);
-    if (user.first != nullptr) {
-      if (llvm::isa<llvm::LoadInst>(user.first)) {
-        used_regs.push_back(user.second);
-      }
+    auto alias = FirstRegUser<llvm::LoadInst>(func, reg, ilist);
+    if (alias.first != nullptr) {
+      used_regs.push_back(alias.second);
+      params.push_back(alias.first->getType());
     }
-  }
-
-  // Gather parameter types from register variable alloca's
-  std::vector<llvm::Type *> params;
-  for (auto reg : used_regs) {
-    auto var = remill::FindVarInFunction(func, reg);
-    auto inst = llvm::dyn_cast<llvm::AllocaInst>(var);
-    CHECK(inst != nullptr);
-    auto type = llvm::dyn_cast<llvm::PointerType>(inst->getAllocatedType());
-    CHECK(type != nullptr);
-    params.push_back(type->getElementType());
   }
 
   auto ret = RecoverRetType(func, cc);
@@ -311,8 +274,9 @@ static llvm::Function *DeclareParametrizedFunc(llvm::Function *func,
     std::stringstream cc_arg_name;
     cc_arg_name << sPrefix << used_regs[arg.getArgNo()];
     arg.setName(cc_arg_name.str());
+    removeAttr(arg, llvm::Attribute::Dereferenceable);
   }
-
+  
   return cc_func;
 }
 
@@ -321,8 +285,7 @@ static void StoreRegArgsToLocals(llvm::Function *func) {
   for (auto &arg : func->args()) {
     auto name = TrimPrefix(arg.getName().str());
     auto var = remill::FindVarInFunction(func, name);
-    auto ptr = ir.CreateLoad(var);
-    ir.CreateStore(&arg, ptr);
+    ir.CreateStore(&arg, var);
   }
 }
 
@@ -424,7 +387,6 @@ bool RemillArgumentRecovery::runOnModule(llvm::Module &module) {
       auto arg_name = TrimPrefix(arg.getName());
       auto var = remill::FindVarInFunction(new_func, arg_name);
       arg.takeName(var);
-      removeAttr(arg, llvm::Attribute::Dereferenceable);
     }
     assert(old_func->use_empty());
     old_func->replaceAllUsesWith(llvm::UndefValue::get(old_func->getType()));
