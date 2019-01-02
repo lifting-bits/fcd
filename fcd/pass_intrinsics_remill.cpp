@@ -71,19 +71,24 @@ bool RemillFixIntrinsics::runOnModule(llvm::Module &module) {
   // Create "__fcd*" replacements for "__remill*" intrinsics
   for (auto &func : module) {
     if (IsRemillIntrinsicWithUse(&func)) {
+      llvm::AttributeList attrs = func.getAttributes();
       // Gather non-lifting arguments from `func`.
       std::vector<llvm::Type *> arg_types;
+      std::vector<llvm::AttributeSet> arg_attrs;
       for (auto &arg : func.args()) {
         auto arg_type = arg.getType();
         if (!IsRemillLiftingArgType(arg_type)) {
           arg_types.push_back(arg_type);
+          arg_attrs.push_back(attrs.getAttributes(llvm::AttributeList::FirstArgIndex + arg.getArgNo()));
         }
       }
       // Determine return type of `new_func`
       // Replace `Memory` with `void`.
       auto ret_type = func.getReturnType();
+      llvm::AttributeSet ret_attrs = attrs.getAttributes(llvm::AttributeList::ReturnIndex);
       if (IsRemillLiftingArgType(ret_type)) {
         ret_type = llvm::Type::getVoidTy(module.getContext());
+        ret_attrs = llvm::AttributeSet();
       }
       // Create the type for `new_func`
       auto func_type = llvm::FunctionType::get(ret_type, arg_types, false);
@@ -94,6 +99,10 @@ bool RemillFixIntrinsics::runOnModule(llvm::Module &module) {
       // Create `new_func`
       auto new_func = llvm::dyn_cast<llvm::Function>(
           module.getOrInsertFunction(ss.str(), func_type));
+      
+      auto func_attrs = attrs.getFnAttributes();
+      auto attributes = llvm::AttributeList::get(func.getContext(), func_attrs, ret_attrs, arg_attrs);
+      new_func->setAttributes(attributes);
       CHECK(new_func != nullptr);
       // Map `new_func` to the old `func` for later use.
       funcs[&func] = new_func;
