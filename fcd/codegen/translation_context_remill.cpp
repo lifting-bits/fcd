@@ -36,10 +36,7 @@
 #include "fcd/compat/AnalysisPasses.h"
 
 #include "fcd/codegen/translation_context_remill.h"
-#include "fcd/pass_argrec_remill.h"
-#include "fcd/pass_asaa.h"
-#include "fcd/pass_stackrec_remill.h"
-#include "fcd/pass_intrinsics_remill.h"
+#include "fcd/passes.h"
 
 namespace fcd {
 namespace {
@@ -579,6 +576,7 @@ void RemillTranslationContext::FinalizeModule() {
   
   llvm::legacy::PassManager phase_one;
   phase_one.add(llvm::createAlwaysInlinerLegacyPass());
+  phase_one.add(createSignExtPass());
   phase_one.add(createRemillArgumentRecoveryPass());
   phase_one.add(llvm::createPromoteMemoryToRegisterPass());
   phase_one.add(llvm::createReassociatePass());
