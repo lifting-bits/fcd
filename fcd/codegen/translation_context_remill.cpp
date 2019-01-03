@@ -31,9 +31,9 @@
 
 #include "remill/BC/Util.h"
 
+#include "fcd/compat/AnalysisPasses.h"
 #include "fcd/compat/IPO.h"
 #include "fcd/compat/Scalar.h"
-#include "fcd/compat/AnalysisPasses.h"
 
 #include "fcd/codegen/translation_context_remill.h"
 #include "fcd/passes.h"
@@ -276,7 +276,6 @@ RemillTranslationContext::RemillTranslationContext(llvm::LLVMContext &ctx,
   target_arch = remill::GetTargetArch();
   module = std::unique_ptr<llvm::Module>(remill::LoadTargetSemantics(&ctx));
   target_arch->PrepareModule(module);
-  
   intrinsics = std::make_unique<remill::IntrinsicTable>(module.get());
   lifter = std::make_unique<remill::InstructionLifter>(target_arch, intrinsics.get());
 }
@@ -569,11 +568,11 @@ void RemillTranslationContext::FinalizeModule() {
     if (auto asaa = p.getAnalysisIfAvailable<AddressSpaceAAWrapperPass>())
       r.addAAResult(asaa->getResult());
   };
-  
+
   auto isels = FindISELs(module.get());
   RemoveIntrinsics(module.get());
   PrivatizeISELs(isels);
-  
+
   llvm::legacy::PassManager phase_one;
   phase_one.add(llvm::createAlwaysInlinerLegacyPass());
   phase_one.add(createSignExtPass());
@@ -584,7 +583,7 @@ void RemillTranslationContext::FinalizeModule() {
   phase_one.add(llvm::createCFGSimplificationPass());
   // phase_one.add(llvm::createVerifierPass());
   phase_one.run(*module);
-  
+
   // Lower memory intrinsics into loads and stores
   // Runtime memory address space is 0
   // Program memory address space is given by pmem_addr_space
@@ -595,7 +594,7 @@ void RemillTranslationContext::FinalizeModule() {
   ReplaceBarrier(module.get(), "__remill_barrier_store_store");
   ReplaceBarrier(module.get(), "__remill_barrier_atomic_begin");
   ReplaceBarrier(module.get(), "__remill_barrier_atomic_end");
-  
+
   llvm::legacy::PassManager phase_two;
   phase_two.add(llvm::createTypeBasedAAWrapperPass());
   phase_two.add(llvm::createScopedNoAliasAAWrapperPass());
