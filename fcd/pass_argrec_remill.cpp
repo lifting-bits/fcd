@@ -115,7 +115,7 @@ static std::unordered_set<const char *> RegisterAliasSet(const char *reg) {
   return result;
 }
 
-static std::unordered_map<llvm::User*, const char *> UsesOfReg(llvm::Function *func, const char *reg) {
+static std::unordered_map<llvm::User*, const char *> UsersOfReg(llvm::Function *func, const char *reg) {
   std::unordered_map<llvm::User*, const char *> result;
   for (auto alias : RegisterAliasSet(reg)) {
     auto var = remill::FindVarInFunction(func, alias);
@@ -128,11 +128,11 @@ static std::unordered_map<llvm::User*, const char *> UsesOfReg(llvm::Function *f
 
 template <typename InstType, typename T>
 static std::pair<InstType *, const char *> FirstRegUser(llvm::Function *func, const char *reg, T &instruction_list) {
-  auto uses = UsesOfReg(func, reg);
+  auto users = UsersOfReg(func, reg);
   for (auto &inst : instruction_list) {
     if (auto typedInst = llvm::dyn_cast<InstType>(&inst)) {
-      auto it = uses.find(&inst);
-      if (it != uses.end())  {
+      auto it = users.find(&inst);
+      if (it != users.end())  {
         return std::make_pair(typedInst, it->second);
       }
     }
@@ -206,15 +206,16 @@ static std::string TrimPrefix(std::string str) {
   }
   return ref.str();
 }
+    
+typedef std::unordered_map<llvm::Function *, llvm::Function*> FunctionMap;
 
-template<class F>
 static void UpdateCalls(llvm::Function *old_func, llvm::Function *new_func,
-                        CallingConvention &cc, F const & is_old_func) {
+                        CallingConvention &cc, FunctionMap const & funcs) {
   llvm::IRBuilder<> ir(new_func->getContext());
   llvm::Value* undef = llvm::UndefValue::get(old_func->getType());
   for (auto old_call : remill::CallersOf(old_func)) {
     auto caller = old_call->getParent()->getParent();
-    if (is_old_func(caller)) {
+    if (funcs.find(caller) != funcs.end()) {
       old_call->setCalledFunction(undef);
     } else {
       ir.SetInsertPoint(old_call);
@@ -304,7 +305,7 @@ static void ConvertRemillArgsToLocals(llvm::Function *func) {
 
   //auto pc_type = remill::AddressType(module);
   auto arg_pc = remill::NthArgument(func, remill::kPCArgNum);
-  assert(arg_pc->use_empty());
+  CHECK(arg_pc->use_empty());
 //  auto loc_pc = ir.CreateAlloca(pc_type, nullptr, "loc_pc");
 //  arg_pc->replaceAllUsesWith(loc_pc);
 
@@ -342,7 +343,7 @@ void RemillArgumentRecovery::getAnalysisUsage(
     llvm::AnalysisUsage &usage) const {}
 
 bool RemillArgumentRecovery::runOnModule(llvm::Module &module) {
-  std::unordered_map<llvm::Function *, llvm::Function*> funcs;
+  FunctionMap funcs;
   for (auto &func : module) {
     if (IsLiftedFunction(&func)) {
       // Recover the argument and return types of `func` by
@@ -381,14 +382,13 @@ bool RemillArgumentRecovery::runOnModule(llvm::Module &module) {
     // Then delete the old function from the module.
     llvm::Function* old_func = func_pair.first;
     llvm::Function* new_func = func_pair.second;
-    auto is_old_func = [&](llvm::Function* f) { return funcs.find(f) != funcs.end(); };
-    UpdateCalls(old_func, new_func, cc, is_old_func);
+    UpdateCalls(old_func, new_func, cc, funcs);
 //    for (auto &arg : new_func->args()) {
 //      auto arg_name = TrimPrefix(arg.getName());
 //      auto var = remill::FindVarInFunction(new_func, arg_name);
 //      arg.takeName(var);
 //    }
-    assert(old_func->use_empty());
+    CHECK(old_func->use_empty());
     old_func->replaceAllUsesWith(llvm::UndefValue::get(old_func->getType()));
     new_func->takeName(old_func);
     old_func->eraseFromParent();
