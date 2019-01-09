@@ -255,7 +255,7 @@ namespace
 			
 			if (auto addressOf = match(subscript.getPointer(), UnaryOperatorExpression::AddressOf))
 			if (auto constantIndex = dyn_cast<NumericExpression>(subscript.getIndex()))
-			if (constantIndex->ui64 == 0)
+			if (constantIndex->value == 0)
 			{
 				subscript.replaceAllUsesWith(addressOf->getOperand());
 				subscript.dropAllReferences();

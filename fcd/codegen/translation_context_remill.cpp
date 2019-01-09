@@ -23,6 +23,8 @@
 #include <llvm/IR/Verifier.h>
 
 #include <llvm/Analysis/AliasAnalysis.h>
+#include <llvm/Transforms/Utils.h>
+#include <llvm/Transforms/InstCombine/InstCombine.h>
 
 #include <sstream>
 #include <string>
@@ -34,10 +36,7 @@
 #include "fcd/compat/Scalar.h"
 
 #include "fcd/codegen/translation_context_remill.h"
-#include "fcd/pass_argrec_remill.h"
-#include "fcd/pass_asaa.h"
-#include "fcd/pass_intrinsics_remill.h"
-#include "fcd/pass_stackrec_remill.h"
+#include "fcd/passes.h"
 
 namespace fcd {
 namespace {
@@ -278,8 +277,7 @@ RemillTranslationContext::RemillTranslationContext(llvm::LLVMContext &ctx,
   module = std::unique_ptr<llvm::Module>(remill::LoadTargetSemantics(&ctx));
   target_arch->PrepareModule(module);
   intrinsics = std::make_unique<remill::IntrinsicTable>(module.get());
-  lifter = std::make_unique<remill::InstructionLifter>(target_arch,
-                                                       intrinsics.get());
+  lifter = std::make_unique<remill::InstructionLifter>(target_arch, intrinsics.get());
 }
 
 uint64_t RemillTranslationContext::FindFunctionAddr(llvm::Function *func) {
@@ -555,6 +553,7 @@ const StubInfo *RemillTranslationContext::GetStubInfo(
         if (auto int2ptr = llvm::dyn_cast<llvm::IntToPtrInst>(inst)) {
           addr = llvm::dyn_cast<llvm::ConstantInt>(int2ptr->getOperand(0));
         }
+        inst->deleteValue();
       } else {
         addr = llvm::dyn_cast<llvm::ConstantInt>(read_op);
       }
@@ -576,6 +575,7 @@ void RemillTranslationContext::FinalizeModule() {
 
   llvm::legacy::PassManager phase_one;
   phase_one.add(llvm::createAlwaysInlinerLegacyPass());
+  phase_one.add(createSignExtPass());
   phase_one.add(createRemillArgumentRecoveryPass());
   phase_one.add(llvm::createPromoteMemoryToRegisterPass());
   phase_one.add(llvm::createReassociatePass());

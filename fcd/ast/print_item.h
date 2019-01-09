@@ -34,6 +34,7 @@ private:
 	PrintableScope* parent;
 	
 public:
+	virtual ~PrintableItem();
 	PrintableItem(Type type, PrintableScope* parent)
 	: discriminant(type), parent(parent)
 	{

@@ -169,7 +169,7 @@ void PreAstContext::generateBlocks(Function& fn)
 					{
 						auto bits = static_cast<unsigned short>(caseValue->getType()->getIntegerBitWidth());
 						const IntegerExpressionType& type = ctx.getIntegerType(false, bits);
-						Expression* numericConstant = ctx.numeric(type, caseValue->getLimitedValue());
+						Expression* numericConstant = ctx.numeric(type, caseValue->getValue());
 						caseCondition = ctx.nary(NAryOperatorExpression::Equal, testVariable, numericConstant);
 					}
 					if (dest == &bbRef)
@@ -210,7 +210,7 @@ PreAstBasicBlock& PreAstContext::createRedirectorBlock(ArrayRef<PreAstBasicBlock
 		auto iter = caseConditions.find(edge->to);
 		if (iter == caseConditions.end())
 		{
-			Expression* numericConstant = ctx.numeric(ctx.getIntegerType(false, 32), caseConditions.size());
+            Expression* numericConstant = ctx.numeric(ctx.getIntegerType(false, 32), llvm::APInt(32, caseConditions.size()));
 			auto condition = ctx.nary(NAryOperatorExpression::Equal, sythesizedVariable, numericConstant);
 			iter = caseConditions.insert({edge->to, condition}).first;
 			

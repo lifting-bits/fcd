@@ -162,7 +162,7 @@ public:
 		return allocate<true, TernaryExpression>(3, cond, ifTrue, ifFalse);
 	}
 	
-	NumericExpression* numeric(const IntegerExpressionType& type, uint64_t ui)
+    NumericExpression* numeric(const IntegerExpressionType& type, llvm::APInt ui)
 	{
 		return allocate<false, NumericExpression>(0, type, ui);
 	}

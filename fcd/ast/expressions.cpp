@@ -269,7 +269,7 @@ bool NumericExpression::operator==(const Expression& that) const
 {
 	if (auto token = llvm::dyn_cast<NumericExpression>(&that))
 	{
-		return this->ui64 == token->ui64;
+		return this->value == token->value;
 	}
 	return false;
 }
